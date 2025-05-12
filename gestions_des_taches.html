@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kanbinou</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header style="padding: 10px 20px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div class="header_content">
+      <p>Total des tâches : <strong id="totalCount">0</strong></p>
+      <div class="header_content-actions">
+        <button class="button-icon" onclick="promptExport()">💾</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
+        <button class="button-icon" onclick="document.getElementById('importFile').click()">📁</button>
+      </div>
+    </div>
+    <div id="typeBar"></div>
+  </header>
+  <main>
+    <div class="container">
+      <div class="column" id="todo">
+        <h2>À faire (<span class="column-counter" id="todoCounter">0</span>) ~<span id="todoTimeTotal">0</span>h</h2>
+        <div class="task-list" id="todoList" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+        <form>
+          <input type="text" id="taskInput" placeholder="Ajouter une tâche..." />
+          <button onclick="addTask()">Ajouter</button>
+        </form>
+      </div>
+      <div class="column" id="doing">
+        <h2>En cours (<span class="column-counter" id="doingCounter">0</span>)</h2>
+        <div class="task-list" id="doingList" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+      </div>
+      <div class="column" id="done">
+        <h2>Terminé (<span class="column-counter" id="doneCounter">0</span>)</h2>
+        <div class="task-list" id="doneList" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+      </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal" id="taskModal">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeModal()">&times;</span>
+        <div class="modal_actions">
+          <button class="button-icon" type="button" onclick="printModalContent()">🖨️</button>
+          <button class="button-icon" onclick="downloadICS(currentTaskId)">📅</button>
+        </div>
+          <h3>Détails de la tâche</h3>
+        <form id="taskDetailsForm">
+          <label>Texte</label>
+          <input type="text" id="modal-text" />
+          <label>Description</label>
+          <textarea id="modal-desc" rows="3"></textarea>
+          <label>Adresse</label>
+          <input type="text" id="modal-address" />
+          <label>E-mail</label>
+          <input type="email" id="modal-email" />
+          <label>Téléphone</label>
+          <input type="tel" id="modal-phone" />
+          <label>Type</label>
+          <select id="modal-type">
+            <option value="neutre">Neutre</option>
+            <option value="commercial">Commercial</option>
+            <option value="essais">Essais</option>
+            <option value="sav">SAV</option>
+            <option value="livraison">Livraison</option>
+          </select>
+          <label>Date</label>
+          <input type="text" id="modal-date" disabled />
+          <label>Temps nécessaire (en heures)</label>
+          <input type="number" id="modal-time" min="0" step="0.25" />
+          <div style="display: flex; justify-content: space-between; gap: 10px;">
+            <button type="submit" style="flex: 4;">Enregistrer</button>
+            <button type="button" style="flex: 1; background-color: #e53935;"
+              onclick="deleteTaskFromModal()">Supprimer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+</body>
+<script src="script.js"></script>
+</html>
