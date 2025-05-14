@@ -6,6 +6,7 @@ const path = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+app.use(express.static('public'))
 
 const STORAGE_FILE = path.join(__dirname, 'kanbinou-backup.secure.json');
 
