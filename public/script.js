@@ -8,6 +8,7 @@ let longPressTimer = null;
 document.addEventListener("DOMContentLoaded", function () {
     loadTasks();
     updateStatistics();
+    toggleSyncMode();
     document.getElementById("taskDetailsForm").addEventListener("submit", function (e) {
         e.preventDefault();
         saveModalData();
@@ -16,6 +17,86 @@ document.addEventListener("DOMContentLoaded", function () {
         updateStatistics();
     });
 });
+
+let syncMode = localStorage.getItem("syncMode") === "true";
+
+function toggleSyncMode() {
+    syncMode = !syncMode;
+    localStorage.setItem("syncMode", syncMode);
+    document.getElementById("syncButton").style.display = syncMode ? "inline-block" : "none";
+}
+
+async function syncWithCloud() {
+    const password = prompt("Mot de passe de synchronisation :");
+    if (!password) return;
+
+    const encoder = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(password, salt);
+
+    const data = JSON.stringify({
+        taskData,
+        columns: {
+            todo: JSON.parse(localStorage.getItem("todo") || "[]"),
+            doing: JSON.parse(localStorage.getItem("doing") || "[]"),
+            done: JSON.parse(localStorage.getItem("done") || "[]")
+        }
+    });
+
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        encoder.encode(data)
+    );
+
+    const payload = {
+        salt: Array.from(salt),
+        iv: Array.from(iv),
+        data: Array.from(new Uint8Array(encrypted))
+    };
+
+    const response = await fetch("http://localhost:3000/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+        alert("Synchronisation réussie !");
+    } else {
+        alert("Erreur lors de la synchronisation");
+    }
+}
+async function loadFromCloud() {
+    const password = prompt("Mot de passe de synchronisation :");
+    if (!password) return;
+
+    const response = await fetch("http://localhost:3000/api/load");
+    const { salt, iv, data } = await response.json();
+
+    const key = await deriveKey(password, new Uint8Array(salt));
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: new Uint8Array(iv) },
+        key,
+        new Uint8Array(data)
+    );
+
+    const json = JSON.parse(new TextDecoder().decode(decrypted));
+    taskData = json.taskData;
+    localStorage.setItem("todo", JSON.stringify(json.columns.todo));
+    localStorage.setItem("doing", JSON.stringify(json.columns.doing));
+    localStorage.setItem("done", JSON.stringify(json.columns.done));
+
+    ["todoList", "doingList", "doneList"].forEach(id => {
+        document.getElementById(id).innerHTML = "";
+    });
+
+    loadTasks();
+    updateStatistics();
+    alert("Chargement depuis le cloud terminé !");
+}
+
 
 function loadTasks() {
     const columns = ["todo", "doing", "done"];
@@ -102,28 +183,6 @@ function createTask(text, columnId, date, description = "", address = "", type =
 
     enableTouchDrag(task); // Active le drag mobile
 }
-
-/*function createTask(text, columnId, date, description = "", address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "") {
-  const task = document.createElement("div");
-  const id = existingId || "task-" + (idCounter++);
-  task.className = "task";
-  task.draggable = true;
-  task.id = id;
-  task.ondragstart = drag;
-  task.onclick = () => showModal(id);
-
-  const textSpan = document.createElement("span");
-  textSpan.textContent = text;
-  task.appendChild(textSpan);
-
-  const typeBadge = document.createElement("span");
-  typeBadge.className = "type-badge type-" + type;
-  typeBadge.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-  task.appendChild(typeBadge);
-
-  document.getElementById(columnId + "List").appendChild(task);
-  taskData[id] = { text, date, description, address, type, time,  email, phone, id };
-}*/
 
 function showModal(taskId) {
     currentTaskId = taskId;
@@ -489,8 +548,8 @@ function downloadICS(taskId) {
     const task = taskData[taskId];
     if (!task) return;
   
-    const start = new Date(task.date);
-    const end = new Date(start.getTime() + (parseFloat(task.time) || 1) * 60 * 60 * 1000); // durée en heures
+    const start = new Date();
+    const end = new Date(start.getTime() + (parseFloat(start) || 1) * 60 * 60 * 1000); // durée en heures
   
     const pad = (num) => String(num).padStart(2, '0');
   
