@@ -14,6 +14,12 @@
         <button class="button-icon" onclick="promptExport()">💾</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
         <button class="button-icon" onclick="document.getElementById('importFile').click()">📁</button>
+      
+        <label class="sync-toggle">
+          <input type="checkbox" id="cloudToggle" onchange="toggleSyncMode()" />
+          <span>Mode cloud</span>
+        </label>
+        <button onclick="syncWithCloud()" id="syncButton" style="display:none;" class="button-icon">Synchroniser 🔄</button>
       </div>
     </div>
     <div id="typeBar"></div>

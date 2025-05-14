@@ -1,0 +1,25 @@
+{
+  "name": "kanbinou",
+  "version": "1.0.0",
+  "description": "Kanbinou is a simple Kanban board, made at 90% by ChatGPT!\r This project is for me a good way to play with this AI, I just give it a prompt and it generates the code for me.\r As a result, the code is not perfect, but it works and I can improve it.",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yaperson/Kanbinou.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yaperson/Kanbinou/issues"
+  },
+  "homepage": "https://github.com/yaperson/Kanbinou#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  }
+}
