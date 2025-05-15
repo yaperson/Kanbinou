@@ -166,6 +166,17 @@ form {
   justify-content: space-evenly;
 }
 
+.column-separator {
+    width: 100%;
+    padding: 1px;
+    background: darkgray;
+    border-radius: 5px;
+}
+
+#waitingList .task {
+  background-color: #cfcfcd96;
+}
+
 @media (max-width: 768px) {
   .container {
     grid-template-columns: 100%;

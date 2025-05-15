@@ -40,6 +40,7 @@ async function syncWithCloud() {
         columns: {
             todo: JSON.parse(localStorage.getItem("todo") || "[]"),
             doing: JSON.parse(localStorage.getItem("doing") || "[]"),
+            waiting: JSON.parse(localStorage.getItem("waiting") || "[]"),
             done: JSON.parse(localStorage.getItem("done") || "[]")
         }
     });
@@ -86,9 +87,10 @@ async function loadFromCloud() {
     taskData = json.taskData;
     localStorage.setItem("todo", JSON.stringify(json.columns.todo));
     localStorage.setItem("doing", JSON.stringify(json.columns.doing));
+    localStorage.setItem("waiting", JSON.stringify(json.columns.waiting));
     localStorage.setItem("done", JSON.stringify(json.columns.done));
 
-    ["todoList", "doingList", "doneList"].forEach(id => {
+    ["todoList", "doingList", "waitingList", "doneList"].forEach(id => {
         document.getElementById(id).innerHTML = "";
     });
 
@@ -99,7 +101,7 @@ async function loadFromCloud() {
 
 
 function loadTasks() {
-    const columns = ["todo", "doing", "done"];
+    const columns = ["todo", "doing", "waiting", "done"];
     let maxId = 0;
     columns.forEach(columnId => {
         const savedTasks = JSON.parse(localStorage.getItem(columnId)) || [];
@@ -242,7 +244,7 @@ function drop(ev) {
 }
 
 function saveAll() {
-    ["todo", "doing", "done"].forEach(columnId => {
+    ["todo", "doing", "waiting", "done"].forEach(columnId => {
         const column = document.getElementById(columnId + "List");
         const tasks = Array.from(column.children);
         const data = tasks.map(task => taskData[task.id]);
@@ -254,10 +256,11 @@ function updateStatistics() {
     const counts = {
         todo: document.getElementById("todoList").children.length,
         doing: document.getElementById("doingList").children.length,
+        waiting: document.getElementById("waitingList").children.length,
         done: document.getElementById("doneList").children.length
     };
 
-    document.getElementById("totalCount").textContent = counts.todo + counts.doing + counts.done;
+    document.getElementById("totalCount").textContent = counts.todo + counts.doing + counts.waiting + counts.done;
     document.getElementById("todoCounter").textContent = counts.todo;
     document.getElementById("doingCounter").textContent = counts.doing;
     document.getElementById("doneCounter").textContent = counts.done;
@@ -268,7 +271,7 @@ function updateStatistics() {
         typeCounts[task.type]++;
     });
 
-    const totalTasks = counts.todo + counts.doing + counts.done;
+    const totalTasks = counts.todo + counts.doing + counts.waiting + counts.done;
     const typeBar = document.getElementById("typeBar");
     typeBar.innerHTML = "";
 
@@ -392,6 +395,7 @@ async function exportTasksEncrypted(password) {
         columns: {
             todo: JSON.parse(localStorage.getItem("todo") || "[]"),
             doing: JSON.parse(localStorage.getItem("doing") || "[]"),
+            waiting: JSON.parse(localStorage.getItem("waiting") || "[]"),
             done: JSON.parse(localStorage.getItem("done") || "[]")
         }
     });
@@ -438,11 +442,12 @@ function handleImportFile(event) {
 
             localStorage.setItem("todo", JSON.stringify(json.columns.todo));
             localStorage.setItem("doing", JSON.stringify(json.columns.doing));
+            localStorage.setItem("waiting", JSON.stringify(json.columns.waiting));
             localStorage.setItem("done", JSON.stringify(json.columns.done));
             taskData = json.taskData;
 
             // Nettoyer et recharger
-            ["todoList", "doingList", "doneList"].forEach(id => {
+            ["todoList", "doingList", "waitingList", "doneList"].forEach(id => {
                 document.getElementById(id).innerHTML = "";
             });
 
