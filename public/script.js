@@ -455,7 +455,7 @@ function handleImportFile(event) {
 
             localStorage.setItem("todo", JSON.stringify(json.columns.todo));
             localStorage.setItem("doing", JSON.stringify(json.columns.doing));
-            localStorage.setItem("waiting", JSON.stringify(json.columns.waiting));
+            JSON.stringify(json.columns.waiting) ? localStorage.setItem("waiting", JSON.stringify(json.columns.waiting)) : localStorage.setItem("waiting", []);
             localStorage.setItem("done", JSON.stringify(json.columns.done));
             taskData = json.taskData;
 
