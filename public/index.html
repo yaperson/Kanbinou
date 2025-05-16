@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanbinou</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <header style="padding: 10px 20px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
     <div class="header_content">
@@ -14,12 +16,13 @@
         <button class="button-icon" onclick="promptExport()">💾</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
         <button class="button-icon" onclick="document.getElementById('importFile').click()">📁</button>
-      
+
         <label class="sync-toggle">
           <input type="checkbox" id="cloudToggle" onchange="toggleSyncMode()" />
           <span>Mode cloud</span>
         </label>
-        <button onclick="syncWithCloud()" id="syncButton" style="display:none;" class="button-icon">Synchroniser 🔄</button>
+        <button onclick="syncWithCloud()" id="syncButton" style="display:none;" class="button-icon">Synchroniser
+          🔄</button>
       </div>
     </div>
     <div id="typeBar"></div>
@@ -34,11 +37,13 @@
           <button onclick="addTask()">Ajouter</button>
         </form>
       </div>
-      <div class="column" id="doing">
+      <div class="column">
         <h2>En cours (<span class="column-counter" id="doingCounter">0</span>)</h2>
-        <div class="task-list" id="doingList" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+        <div id="doing">
+          <div class="task-list" id="doingList" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+        </div>
         <div class="column-separator"></div>
-        <div id="waitingList">
+        <div id="waiting">
           <div class="task-list" id="waitingList" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
         </div>
       </div>
@@ -56,7 +61,7 @@
           <button class="button-icon" type="button" onclick="printModalContent()">🖨️</button>
           <button class="button-icon" onclick="downloadICS(currentTaskId)">📅</button>
         </div>
-          <h3>Détails de la tâche</h3>
+        <h3>Détails de la tâche</h3>
         <form id="taskDetailsForm">
           <label>Texte</label>
           <input type="text" id="modal-text" />
@@ -91,4 +96,5 @@
   </main>
 </body>
 <script src="script.js"></script>
+
 </html>
