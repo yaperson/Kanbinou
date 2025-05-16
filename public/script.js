@@ -106,7 +106,20 @@ function loadTasks() {
     columns.forEach(columnId => {
         const savedTasks = JSON.parse(localStorage.getItem(columnId)) || [];
         savedTasks.forEach(task => {
-            createTask(task.text, columnId, task.date, task.description, task.address, task.type, task.id, task.time || 0, task.contact || "");
+            // createTask(task.text, columnId, task.date, task.description, task.address, task.type, task.id, task.time || 0, task.contact || "");
+            createTask(
+                task.text,
+                columnId,
+                task.date,
+                task.description,
+                task.address,
+                task.type,
+                task.id,
+                task.time || 0,
+                task.email || "",
+                task.phone || ""
+            );
+
             const taskNum = parseInt(task.id?.replace("task-", ""));
             if (!isNaN(taskNum) && taskNum >= maxId) {
                 maxId = taskNum + 1;
