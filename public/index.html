@@ -11,19 +11,24 @@
 <body>
   <header style="padding: 10px 20px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
     <div class="header_content">
-      <p>Total des tâches : <strong id="totalCount">0</strong></p>
-      <div class="header_content-actions">
-        <button class="button-icon" onclick="promptExport()">💾</button>
-        <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
-        <button class="button-icon" onclick="document.getElementById('importFile').click()">📁</button>
-
-        <label class="sync-toggle">
-          <input type="checkbox" id="cloudToggle" onchange="toggleSyncMode()" />
+      <div class="header_content-main">
+        <p>Total des tâches : <strong id="totalCount">0</strong></p>
+        
+        <input type="text" list="search_task" id="searchBar" placeholder="Rechercher">
+        <datalist id="search_task"></datalist>
+      </div>
+        <div class="header_content-actions">
+          <button class="button-icon" onclick="promptExport()">💾</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
+          <button class="button-icon" onclick="document.getElementById('importFile').click()">📁</button>
+          
+          <label class="sync-toggle">
+            <input type="checkbox" id="cloudToggle" onchange="toggleSyncMode()" />
           <span>Mode cloud</span>
         </label>
         <button onclick="syncWithCloud()" id="syncButton" style="display:none;" class="button-icon">Synchroniser
           🔄</button>
-      </div>
+        </div>
     </div>
     <div id="typeBar"></div>
   </header>

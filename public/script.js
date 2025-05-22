@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", function () {
     loadTasks();
     updateStatistics();
     toggleSyncMode();
+    searchBar();
     document.getElementById("taskDetailsForm").addEventListener("submit", function (e) {
         e.preventDefault();
         saveModalData();
@@ -330,6 +331,41 @@ function filterByType(type) {
     }
 }
 
+// SearchBar with datalist element
+function searchBar() {
+    const datalist = document.getElementById('search_task');
+    const searchBar = document.getElementById('searchBar');
+
+    // Nettoyage du datalist
+    datalist.innerHTML = "";
+
+    // Remplir le datalist avec toutes les tâches
+    const uniqueTexts = new Set();
+    Object.values(taskData).forEach(task => {
+        if (!uniqueTexts.has(task.text)) {
+            uniqueTexts.add(task.text);
+            let option = document.createElement("option");
+            option.value = task.text;
+            datalist.appendChild(option);
+        }
+    });
+
+    searchBar.addEventListener('keyup', () => {
+        const searchValue = searchBar.value.toLowerCase().trim();
+
+        Object.values(taskData).forEach(task => {
+            const taskElement = document.getElementById(task.id);
+            if (!taskElement) return;
+
+            // On affiche la tâche si le texte contient la valeur cherchée
+            if (task.text.toLowerCase().includes(searchValue)) {
+                taskElement.style.display = "block";
+            } else {
+                taskElement.style.display = "none";
+            }
+        });
+    });
+}
 function deleteTaskFromModal() {
     if (currentTaskId && taskData[currentTaskId]) {
         if (confirm("Supprimer cette tâche ?")) {
