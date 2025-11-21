@@ -119,11 +119,17 @@ button:hover {
   width: fit-content;
   background: none;
   border-radius: 0;
-  padding: 0;
-  color: black;
+  padding: 0.5em;
+  margin: 0.5em;
+  color: rgb(57, 57, 57);
+  border: #bdbdbd solid 1px;
+  /* box-shadow: 0 0 11px 0px #0000004f; */
+  border-radius: 5px;
+  transition: 0.2s;
 }
 .button-icon:hover {
-  background-color: transparent;
+  transition: 0.2s;
+  background-color: rgba(128, 128, 128, 0.053);
 }
 #typeBar {
   height: 20px;
@@ -187,4 +193,81 @@ form {
     margin-bottom: 20px;
   }
   
+}
+
+
+/* Conteneur */
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 15px;
+}
+
+/* Labels */
+.toggle-label {
+    opacity: 0.4;
+    font-weight: normal;
+    padding: 3px 8px;
+    border-radius: 5px;
+    transition: 0.3s;
+}
+
+.toggle-label.active {
+    opacity: 1;
+    font-weight: bold;
+}
+
+.toggle-label.active#label-year {
+    background: #e5ffe5;
+    color: #157c15;
+}
+
+.toggle-label.active#label-date {
+    background: #e5f0ff;
+    color: #155bca;
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 45px;
+  height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #157c15;
+  border-radius: 22px;
+  transition: 0.3s;
+}
+
+.slider:before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  top: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+/* Animation du slider quand le checkbox est activé */
+input:checked + .slider:before {
+  transform: translateX(23px);
+}
+
+input:checked + .slider {
+  background-color: #155bca;
 }

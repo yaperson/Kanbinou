@@ -18,16 +18,18 @@
         <datalist id="search_task"></datalist>
       </div>
         <div class="header_content-actions">
-          <button class="button-icon" onclick="promptExport()">💾</button>
+          <button class="button-icon" title="Export format Kanbinou" onclick="promptExport()">Export kbn 💾</button>
           <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
-          <button class="button-icon" onclick="document.getElementById('importFile').click()">📁</button>
+          <button class="button-icon" title="importer un fichier Kanbinou" onclick="document.getElementById('importFile').click()">Importer 📁</button>
           
-          <label class="sync-toggle">
+          <button class="button-icon" onclick="openCSVExport()" title="Export Excel">Export CSV 📄</button>
+          
+          <!-- <label class="sync-toggle">
             <input type="checkbox" id="cloudToggle" onchange="toggleSyncMode()" />
           <span>Mode cloud</span>
-        </label>
-        <button onclick="syncWithCloud()" id="syncButton" style="display:none;" class="button-icon">Synchroniser
-          🔄</button>
+          </label>
+          <button onclick="syncWithCloud()" id="syncButton" style="display:none;" class="button-icon">Synchroniser
+          🔄</button> -->
         </div>
     </div>
     <div id="typeBar"></div>
@@ -90,6 +92,8 @@
           <input type="text" id="modal-date" disabled />
           <label>Temps nécessaire (en heures)</label>
           <input type="number" id="modal-time" min="0" step="0.25" />
+          <label>Prevision/vente</label>
+          <input type="text" id="modal-vente" />
           <div style="display: flex; justify-content: space-between; gap: 10px;">
             <button type="submit" style="flex: 4;">Enregistrer</button>
             <button type="button" style="flex: 1; background-color: #e53935;"
@@ -98,6 +102,67 @@
         </form>
       </div>
     </div>
+
+<div id="csvExportModal" class="modal" style="display:none">
+    <div class="modal-content">
+        <h3>Exporter en CSV</h3>
+
+        <h4>Colonnes à exporter :</h4>
+        <label><input type="checkbox" class="csv-column" value="todo"> À faire (todo)</label><br>
+        <label><input type="checkbox" class="csv-column" value="doing"> En cours (doing)</label><br>
+        <label><input type="checkbox" class="csv-column" value="waiting"> En attente (waiting)</label><br>
+        <label><input type="checkbox" class="csv-column" value="done"> Fait (done)</label><br>
+        <label><input type="checkbox" id="csv-all-columns"> Tout sélectionner</label>
+
+        <hr>
+
+        <h4>Types (optionnel) :</h4>
+        <label><input type="checkbox" class="csv-type" value="commercial"> Commercial</label><br>
+        <label><input type="checkbox" class="csv-type" value="essais"> Essais</label><br>
+        <label><input type="checkbox" class="csv-type" value="sav"> SAV</label><br>
+        <label><input type="checkbox" class="csv-type" value="livraison"> Livraison</label><br>
+        <label><input type="checkbox" class="csv-type" value="neutre"> Neutre</label><br>
+        <label><input type="checkbox" id="csv-all-types"> Tout sélectionner</label>
+
+<hr>
+
+<h4>Filtre par date</h4>
+
+<label class="toggle-row">
+    <span id="label-year" class="toggle-label">Année</span>
+
+    <div class="switch">
+        <input type="checkbox" id="csv-date-toggle">
+        <span class="slider"></span>
+    </div>
+
+    <span id="label-date" class="toggle-label">Date</span>
+</label>
+
+
+<br><br>
+
+<!-- Années -->
+<div id="csv-filter-year-block">
+    <input type="text" id="csv-year-filter" placeholder="ex : 2025 ou 2025,2026">
+    <small>(séparer plusieurs années par des virgules)</small>
+</div>
+
+<!-- Dates -->
+<div id="csv-filter-date-block" style="display:none;">
+    <label>Du : <input type="date" id="csv-date-from"></label><br>
+    <label>Au : <input type="date" id="csv-date-to"></label>
+</div>
+
+
+        <br><br>
+        <button onclick="confirmCSVExport()">Exporter</button>
+        <button onclick='closeCSVExport()'>Annuler</button>
+    </div>
+</div>
+
+</div>
+
   </main>
 </body>
 <script src="script.js"></script>

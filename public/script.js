@@ -113,6 +113,7 @@ function loadTasks() {
                 columnId,
                 task.date,
                 task.description,
+                task.vente,
                 task.address,
                 task.type,
                 task.id,
@@ -142,7 +143,7 @@ function addTask() {
     }
 }
 
-function createTask(text, columnId, date, description = "", address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "") {
+function createTask(text, columnId, date, description = "",vente ="", address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "") {
     const task = document.createElement("div");
     const id = existingId || "task-" + (idCounter++);
     task.className = "task";
@@ -195,7 +196,7 @@ function createTask(text, columnId, date, description = "", address = "", type =
     task.appendChild(typeBadge);
 
     document.getElementById(columnId + "List").appendChild(task);
-    taskData[id] = { text, date, description, address, type, time, email, phone, id };
+    taskData[id] = { text, date, description, vente, address, type, time, email, phone, id };
 
     enableTouchDrag(task); // Active le drag mobile
 }
@@ -206,6 +207,7 @@ function showModal(taskId) {
     if (!data) return;
     document.getElementById("modal-text").value = data.text;
     document.getElementById("modal-desc").value = data.description || "";
+    document.getElementById("modal-vente").value = data.vente || "";
     document.getElementById("modal-address").value = data.address || "";
     document.getElementById("modal-email").value = data.email || "";
     document.getElementById("modal-phone").value = data.phone || "";
@@ -220,6 +222,7 @@ function saveModalData() {
     if (!data) return;
     data.text = document.getElementById("modal-text").value.trim();
     data.description = document.getElementById("modal-desc").value.trim();
+    data.vente = document.getElementById("modal-vente").value.trim();
     data.address = document.getElementById("modal-address").value.trim();
     data.email = document.getElementById("modal-email").value.trim();
     data.phone = document.getElementById("modal-phone").value.trim();
@@ -408,6 +411,7 @@ function printModalContent() {
       <p><strong>Email :</strong> ${escapeHTML(data.email)}</p>
       <p><strong>Téléphone :</strong> ${escapeHTML(data.phone)}</p>
       <p><strong>Type :</strong> ${escapeHTML(data.type)}</p>
+      <p><strong>Vente :</strong> ${escapeHTML(data.vente)}€</p>
       <p><strong>Date de création :</strong> ${new Date(data.date).toLocaleString()}</p>
      <script>
         window.onload = function() {
@@ -638,3 +642,174 @@ function downloadICS(taskId) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
+
+function confirmCSVExport() {
+    // Colonnes
+    const colCheckboxes = [...document.querySelectorAll(".csv-column:checked")];
+    const selectedColumns = colCheckboxes.map(cb => cb.value);
+
+    // Types
+    const typeCheckboxes = [...document.querySelectorAll(".csv-type:checked")];
+    const selectedTypes = typeCheckboxes.map(cb => cb.value);
+
+    // Toggle années / date
+    const isDateMode = document.getElementById("csv-date-toggle").checked;
+
+    let dateFrom = null, dateTo = null, selectedYears = [];
+
+    if (isDateMode) {
+        // Mode DATE
+        dateFrom = document.getElementById("csv-date-from").value || null;
+        dateTo = document.getElementById("csv-date-to").value || null;
+    } else {
+        // Mode ANNÉE
+        let years = document.getElementById("csv-year-filter").value.trim();
+        selectedYears = years
+            ? years.split(",").map(y => y.trim()).filter(y => /^\d{4}$/.test(y))
+            : [];
+    }
+
+    exportCSV(selectedColumns, selectedTypes, dateFrom, dateTo, selectedYears);
+    closeCSVExport();
+}
+
+
+
+function exportCSV(columns = [], types = [], dateFrom = null, dateTo = null, years = []) {
+    const exportAllColumns = columns.length === 0;
+    const exportAllTypes = types.length === 0;
+    const filterByDateRange = dateFrom || dateTo;
+    const filterByYears = years.length > 0;
+
+    let rows = [
+        ["ID", "Texte", "Description", "Adresse", "Email", "Téléphone", "Type", "Colonne", "Date", "Temps (h)"]
+    ];
+
+    const columnLists = {
+        todo: document.getElementById("todoList"),
+        doing: document.getElementById("doingList"),
+        waiting: document.getElementById("waitingList"),
+        done: document.getElementById("doneList")
+    };
+
+    for (let colName in columnLists) {
+        if (!exportAllColumns && !columns.includes(colName)) continue;
+
+        const tasksInColumn = [...columnLists[colName].children];
+
+        tasksInColumn.forEach(el => {
+            const t = taskData[el.id];
+            if (!t) return;
+
+            // Filtre par type
+            if (!exportAllTypes && !types.includes(t.type)) return;
+
+            // Date de création → Date JS
+            const taskDate = new Date(t.date);
+
+            // Filtre par plage de dates
+            if (filterByDateRange) {
+                if (dateFrom && taskDate < new Date(dateFrom)) return;
+                if (dateTo && taskDate > new Date(dateTo + "T23:59:59")) return;
+            }
+
+            // Filtre par années
+            if (filterByYears && !years.includes(String(taskDate.getFullYear()))) {
+                return;
+            }
+
+            rows.push([
+                t.id,
+                t.text,
+                t.description || "",
+                t.address || "",
+                t.email || "",
+                t.phone || "",
+                t.type,
+                colName,
+                taskDate.toLocaleString(),
+                t.time || 0
+            ]);
+        });
+    }
+
+    // Construction CSV
+    const csvContent = rows
+        .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";"))
+        .join("\r\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "kanbinou_export.csv";
+    a.click();
+
+    URL.revokeObjectURL(url);
+}
+
+
+
+function openCSVExport() {
+    document.getElementById("csvExportModal").style.display = "block";
+}
+
+function closeCSVExport() {
+    document.getElementById("csvExportModal").style.display = "none";
+}
+
+// Sélectionner toutes les colonnes
+document.getElementById("csv-all-columns")?.addEventListener("change", function () {
+    const state = this.checked;
+    document.querySelectorAll(".csv-column").forEach(cb => cb.checked = state);
+});
+
+// Sélectionner tous les types
+document.getElementById("csv-all-types")?.addEventListener("change", function () {
+    const state = this.checked;
+    document.querySelectorAll(".csv-type").forEach(cb => cb.checked = state);
+});
+
+document.getElementById("csv-date-toggle").addEventListener("change", function () {
+    const isDateMode = this.checked;
+
+    // document.getElementById("csv-toggle-label").textContent =
+    //     isDateMode ? "Filtrer par DATE" : "Filtrer par ANNÉES";
+
+    document.getElementById("csv-filter-year-block").style.display =
+        isDateMode ? "none" : "block";
+
+    document.getElementById("csv-filter-date-block").style.display =
+        isDateMode ? "block" : "none";
+});
+
+// ToggleLabels.js
+const ToggleLabels = (() => {
+    const toggle = document.getElementById("csv-date-toggle");
+    const labelYear = document.getElementById("label-year");
+    const labelDate = document.getElementById("label-date");
+
+    const updateLabels = () => {
+        if (toggle.checked) {
+            setActive(labelDate);
+            setInactive(labelYear);
+        } else {
+            setActive(labelYear);
+            setInactive(labelDate);
+        }
+    };
+
+    const setActive = (label) => label.classList.add("active");
+    const setInactive = (label) => label.classList.remove("active");
+
+    const init = () => {
+        if (!toggle || !labelYear || !labelDate) return;
+        updateLabels(); // état initial
+        toggle.addEventListener("change", updateLabels); // écoute des changements
+    };
+
+    return { init };
+})();
+
+document.addEventListener("DOMContentLoaded", () => ToggleLabels.init());
