@@ -8,7 +8,7 @@ let longPressTimer = null;
 document.addEventListener("DOMContentLoaded", function () {
     loadTasks();
     updateStatistics();
-    toggleSyncMode();
+    // toggleSyncMode();
     searchBar();
     document.getElementById("taskDetailsForm").addEventListener("submit", function (e) {
         e.preventDefault();
@@ -21,11 +21,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
 let syncMode = localStorage.getItem("syncMode") === "true";
 
-function toggleSyncMode() {
-    syncMode = !syncMode;
-    localStorage.setItem("syncMode", syncMode);
-    document.getElementById("syncButton").style.display = syncMode ? "inline-block" : "none";
-}
+// function toggleSyncMode() {
+//     syncMode = !syncMode;
+//     localStorage.setItem("syncMode", syncMode);
+//     document.getElementById("syncButton").style.display = syncMode ? "inline-block" : "none";
+// }
 
 async function syncWithCloud() {
     const password = prompt("Mot de passe de synchronisation :");
@@ -113,7 +113,8 @@ function loadTasks() {
                 columnId,
                 task.date,
                 task.description,
-                task.vente,
+                task.projection,
+                task.sold,
                 task.address,
                 task.type,
                 task.id,
@@ -143,7 +144,7 @@ function addTask() {
     }
 }
 
-function createTask(text, columnId, date, description = "",vente ="", address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "") {
+function createTask(text, columnId, date, description = "", projection ="", sold = false, address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "") {
     const task = document.createElement("div");
     const id = existingId || "task-" + (idCounter++);
     task.className = "task";
@@ -196,7 +197,7 @@ function createTask(text, columnId, date, description = "",vente ="", address = 
     task.appendChild(typeBadge);
 
     document.getElementById(columnId + "List").appendChild(task);
-    taskData[id] = { text, date, description, vente, address, type, time, email, phone, id };
+    taskData[id] = { text, date, description, projection, sold, address, type, time, email, phone, id };
 
     enableTouchDrag(task); // Active le drag mobile
 }
@@ -205,24 +206,36 @@ function showModal(taskId) {
     currentTaskId = taskId;
     const data = taskData[taskId];
     if (!data) return;
+
+
     document.getElementById("modal-text").value = data.text;
     document.getElementById("modal-desc").value = data.description || "";
-    document.getElementById("modal-vente").value = data.vente || "";
+    document.getElementById("modal-projection").value = data.projection || ""; // <- projection
+    document.getElementById("modal-sold").checked = data.sold || false; // <- sold
+
     document.getElementById("modal-address").value = data.address || "";
     document.getElementById("modal-email").value = data.email || "";
     document.getElementById("modal-phone").value = data.phone || "";
     document.getElementById("modal-type").value = data.type || "neutre";
     document.getElementById("modal-date").value = new Date(data.date).toLocaleString();
     document.getElementById("modal-time").value = data.time || 0;
+
     document.getElementById("taskModal").style.display = "block";
 }
+
+
 
 function saveModalData() {
     const data = taskData[currentTaskId];
     if (!data) return;
+
+    console.log(data)
+
     data.text = document.getElementById("modal-text").value.trim();
     data.description = document.getElementById("modal-desc").value.trim();
-    data.vente = document.getElementById("modal-vente").value.trim();
+    data.projection = parseFloat(document.getElementById("modal-projection").value) || 0;
+
+    data.sold = document.getElementById("modal-sold").checked;
     data.address = document.getElementById("modal-address").value.trim();
     data.email = document.getElementById("modal-email").value.trim();
     data.phone = document.getElementById("modal-phone").value.trim();
@@ -234,7 +247,9 @@ function saveModalData() {
     spans[0].textContent = data.text;
     spans[1].className = "type-badge type-" + data.type;
     spans[1].textContent = data.type.charAt(0).toUpperCase() + data.type.slice(1);
+
 }
+
 
 function closeModal() {
     document.getElementById("taskModal").style.display = "none";
@@ -411,7 +426,7 @@ function printModalContent() {
       <p><strong>Email :</strong> ${escapeHTML(data.email)}</p>
       <p><strong>Téléphone :</strong> ${escapeHTML(data.phone)}</p>
       <p><strong>Type :</strong> ${escapeHTML(data.type)}</p>
-      <p><strong>Vente :</strong> ${escapeHTML(data.vente)}€</p>
+      <p><strong>Projection :</strong> ${escapeHTML(data.projection)}€</p>
       <p><strong>Date de création :</strong> ${new Date(data.date).toLocaleString()}</p>
      <script>
         window.onload = function() {
@@ -680,9 +695,11 @@ function exportCSV(columns = [], types = [], dateFrom = null, dateTo = null, yea
     const exportAllTypes = types.length === 0;
     const filterByDateRange = dateFrom || dateTo;
     const filterByYears = years.length > 0;
+    // Is Sold
+    const soldFilter = document.querySelector('input[name="csv-sold-filter"]:checked')?.value || "all";
 
     let rows = [
-        ["ID", "Texte", "Description", "Adresse", "Email", "Téléphone", "Type", "Colonne", "Date", "Temps (h)"]
+        ["ID", "Texte", "Description","Projection (€)", "vendu", "Adresse", "Email", "Téléphone", "Type", "Colonne", "Date", "Temps (h)"]
     ];
 
     const columnLists = {
@@ -718,10 +735,16 @@ function exportCSV(columns = [], types = [], dateFrom = null, dateTo = null, yea
                 return;
             }
 
+            // filtre par vente
+            if (soldFilter === "sold" && !t.sold) return;
+            if (soldFilter === "not-sold" && t.sold) return;
+
             rows.push([
                 t.id,
                 t.text,
                 t.description || "",
+                t.projection,
+                t.sold ? "Oui" : "Non",
                 t.address || "",
                 t.email || "",
                 t.phone || "",
@@ -811,5 +834,3 @@ const ToggleLabels = (() => {
 
     return { init };
 })();
-
-document.addEventListener("DOMContentLoaded", () => ToggleLabels.init());
