@@ -21,6 +21,11 @@ I discover a new way of working, solving my problems, and improving my little pr
 - No database required (uses local storage)
 - Secure exports
 
+### -- November 2025 Updates --
+- CSV export with filtering by date and task type/column
+- Improved UI
+- Added a projection/sales field to estimate task values
+
 ------
 
 ## Installation
