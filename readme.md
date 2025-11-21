@@ -50,5 +50,10 @@ Je découvre ainsi une nouvelle façon de travailler, de régler mes soucis, d'a
 - Aucune base de données requise (utilise le stockage local)
 - Exports sécurisés
 
+### -- Mise à jours Novembre 2025 --
+ - Export CSV avec filtre par date et par type de taches/colones
+ - UI amélioré
+ - Ajout d'un champ projection/vente pour chiffrer les taches
+
 ## Installation
  Il suffit de cloner le dépôt et d'ouvrir le fichier `index.html` dans votre navigateur
