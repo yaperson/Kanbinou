@@ -60,5 +60,9 @@ Je découvre ainsi une nouvelle façon de travailler, de régler mes soucis, d'a
  - UI amélioré
  - Ajout d'un champ projection/vente pour chiffrer les taches
 
+### -- Mise à jours Decembre 2025 --
+ - Ajout de la roadmap d'essai
+ - Gestion parc de demo 
+
 ## Installation
  Il suffit de cloner le dépôt et d'ouvrir le fichier `index.html` dans votre navigateur

@@ -5,6 +5,13 @@ let idCounter = 0;
 let activeFilter = null;
 let longPressTimer = null;
 
+// TODO
+let products = JSON.parse(localStorage.getItem("products")) || [
+    { id: "prod-1", name: "produit test" }
+];
+
+
+
 document.addEventListener("DOMContentLoaded", function () {
     loadTasks();
     updateStatistics();
@@ -104,10 +111,10 @@ async function loadFromCloud() {
 function loadTasks() {
     const columns = ["todo", "doing", "waiting", "done"];
     let maxId = 0;
+
     columns.forEach(columnId => {
         const savedTasks = JSON.parse(localStorage.getItem(columnId)) || [];
         savedTasks.forEach(task => {
-            // createTask(task.text, columnId, task.date, task.description, task.address, task.type, task.id, task.time || 0, task.contact || "");
             createTask(
                 task.text,
                 columnId,
@@ -120,7 +127,10 @@ function loadTasks() {
                 task.id,
                 task.time || 0,
                 task.email || "",
-                task.phone || ""
+                task.phone || "",
+                task.products || [],
+                task.start || "", 
+                task.end || "" // <-- produits récupérés
             );
 
             const taskNum = parseInt(task.id?.replace("task-", ""));
@@ -129,6 +139,7 @@ function loadTasks() {
             }
         });
     });
+
     idCounter = maxId;
 }
 
@@ -144,7 +155,7 @@ function addTask() {
     }
 }
 
-function createTask(text, columnId, date, description = "", projection ="", sold = false, address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "") {
+function createTask(text, columnId, date, description = "", projection ="", sold = false, address = "", type = "neutre", existingId = null, time = 0, email = "", phone = "", products = [], start = "", end = "") {
     const task = document.createElement("div");
     const id = existingId || "task-" + (idCounter++);
     task.className = "task";
@@ -197,7 +208,14 @@ function createTask(text, columnId, date, description = "", projection ="", sold
     task.appendChild(typeBadge);
 
     document.getElementById(columnId + "List").appendChild(task);
-    taskData[id] = { text, date, description, projection, sold, address, type, time, email, phone, id };
+    // taskData[id] = { text, date, description, projection, sold, address, type, time, email, phone, id };
+    taskData[id] = {
+        text, date, description, projection, sold, address,
+        type, time, email, phone, id,
+        products,
+        start,
+        end
+    };
 
     enableTouchDrag(task); // Active le drag mobile
 }
@@ -207,12 +225,15 @@ function showModal(taskId) {
     const data = taskData[taskId];
     if (!data) return;
 
+    document.getElementById("taskModal").style.display = "block";
+
+    // Remplir la liste AVANT de mettre la valeur   
+    populateProductList();  
 
     document.getElementById("modal-text").value = data.text;
     document.getElementById("modal-desc").value = data.description || "";
-    document.getElementById("modal-projection").value = data.projection || ""; // <- projection
-    document.getElementById("modal-sold").checked = data.sold || false; // <- sold
-
+    document.getElementById("modal-projection").value = data.projection || "";
+    document.getElementById("modal-sold").checked = data.sold || false;
     document.getElementById("modal-address").value = data.address || "";
     document.getElementById("modal-email").value = data.email || "";
     document.getElementById("modal-phone").value = data.phone || "";
@@ -220,8 +241,11 @@ function showModal(taskId) {
     document.getElementById("modal-date").value = new Date(data.date).toLocaleString();
     document.getElementById("modal-time").value = data.time || 0;
 
-    document.getElementById("taskModal").style.display = "block";
+    document.getElementById("modal-product").value = data.products || "";
+    document.getElementById("modal-start").value = data.start || "";
+    document.getElementById("modal-end").value = data.end || "";
 }
+
 
 
 
@@ -242,11 +266,17 @@ function saveModalData() {
     data.type = document.getElementById("modal-type").value;
     data.time = parseFloat(document.getElementById("modal-time").value) || 0;
 
+    data.products = document.getElementById("modal-product").value;
+    data.start = document.getElementById("modal-start").value;
+    data.end = document.getElementById("modal-end").value;
+
+
     const task = document.getElementById(currentTaskId);
     const spans = task.querySelectorAll("span");
     spans[0].textContent = data.text;
     spans[1].className = "type-badge type-" + data.type;
     spans[1].textContent = data.type.charAt(0).toUpperCase() + data.type.slice(1);
+
 
 }
 
@@ -465,7 +495,8 @@ async function exportTasksEncrypted(password) {
             doing: JSON.parse(localStorage.getItem("doing") || "[]"),
             waiting: JSON.parse(localStorage.getItem("waiting") || "[]"),
             done: JSON.parse(localStorage.getItem("done") || "[]")
-        }
+        },
+        products
     });
 
     const encrypted = await crypto.subtle.encrypt(
@@ -513,6 +544,8 @@ function handleImportFile(event) {
             JSON.stringify(json.columns.waiting) ? localStorage.setItem("waiting", JSON.stringify(json.columns.waiting)) : localStorage.setItem("waiting", []);
             localStorage.setItem("done", JSON.stringify(json.columns.done));
             taskData = json.taskData;
+
+            JSON.stringify(json.products) ? localStorage.setItem("products", JSON.stringify(json.products)) : localStorage.setItem("products", []);
 
             // Nettoyer et recharger
             ["todoList", "doingList", "waitingList", "doneList"].forEach(id => {
@@ -658,6 +691,10 @@ function downloadICS(taskId) {
     URL.revokeObjectURL(url);
 }
 
+/**
+ * Export CSV
+ */
+
 function confirmCSVExport() {
     // Colonnes
     const colCheckboxes = [...document.querySelectorAll(".csv-column:checked")];
@@ -687,8 +724,6 @@ function confirmCSVExport() {
     exportCSV(selectedColumns, selectedTypes, dateFrom, dateTo, selectedYears);
     closeCSVExport();
 }
-
-
 
 function exportCSV(columns = [], types = [], dateFrom = null, dateTo = null, years = []) {
     const exportAllColumns = columns.length === 0;
@@ -772,8 +807,6 @@ function exportCSV(columns = [], types = [], dateFrom = null, dateTo = null, yea
     URL.revokeObjectURL(url);
 }
 
-
-
 function openCSVExport() {
     document.getElementById("csvExportModal").style.display = "block";
 }
@@ -834,3 +867,264 @@ const ToggleLabels = (() => {
 
     return { init };
 })();
+
+
+/**
+ * ROADMAP
+ */
+
+function openRoadmap() {
+    document.getElementById("roadmapView").style.display = "block";
+
+    ["todo","doing","waiting","done"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "none";
+    });
+
+
+    buildRoadmap();
+}
+
+let currentMonth = new Date(); // mois affiché par défaut
+
+function changeMonth(offset) {
+    currentMonth.setMonth(currentMonth.getMonth() + offset);
+    buildRoadmap();
+}
+
+function formatMonth(date) {
+    return date.toLocaleString("fr-FR", { month: "long", year: "numeric" });
+}
+
+
+let currentRoadmapMonth = new Date(); // Mois affiché par défaut
+
+function changeMonth(offset) {
+    currentRoadmapMonth.setMonth(currentRoadmapMonth.getMonth() + offset);
+    buildRoadmap();
+}
+
+function buildRoadmap() {
+    const grid = document.getElementById("roadmapGrid");
+    const header = document.getElementById("roadmapHeader");
+    grid.innerHTML = "";
+    header.innerHTML = "";
+
+    // On récupère les tâches d'essais seulement
+    const essais = Object.values(taskData).filter(t => t.type === "essais");
+
+    if (essais.length === 0) {
+        grid.innerHTML = "<p>Aucun essai enregistré.</p>";
+        return;
+    }
+
+    // Calcul du mois à afficher
+    const monthStart = new Date(currentRoadmapMonth.getFullYear(), currentRoadmapMonth.getMonth(), 1);
+    const monthEnd = new Date(currentRoadmapMonth.getFullYear(), currentRoadmapMonth.getMonth() + 1, 0); // dernier jour
+
+    // Filtrer les essais qui touchent ce mois
+    const essaisThisMonth = essais.filter(t => {
+        const start = t.start ? new Date(t.start) : null;
+        const end = t.end ? new Date(t.end) : null;
+        if (!start || !end) return false;
+        return end >= monthStart && start <= monthEnd;
+    });
+
+    if (essaisThisMonth.length === 0) {
+        grid.innerHTML = "<p>Aucun essai pour ce mois.</p>";
+        return;
+    }
+
+    // Header du calendrier
+    const dayCount = monthEnd.getDate();
+    header.style.display = "grid";
+    header.style.gridTemplateColumns = `150px repeat(${dayCount}, 40px)`;
+
+    // Cellule vide pour le nom produit
+    const empty = document.createElement("div");
+    header.appendChild(empty);
+
+    // Nom du mois
+    const monthName = monthStart.toLocaleString("fr-FR", { month: "long", year: "numeric" });
+    const monthCell = document.createElement("div");
+    monthCell.textContent = monthName.toUpperCase();
+    monthCell.style.gridColumn = `span ${dayCount}`;
+    monthCell.style.textAlign = "center";
+    monthCell.style.fontWeight = "bold";
+    monthCell.style.marginBottom = "5px";
+    header.appendChild(monthCell);
+
+    // Ligne des jours
+    const daysRow = document.createElement("div");
+    daysRow.style.gridColumn = `span ${dayCount + 1}`;
+    daysRow.style.display = "grid";
+    daysRow.style.gridTemplateColumns = `150px repeat(${dayCount}, 40px)`;
+    header.appendChild(daysRow);
+
+    // Cellule vide pour les noms
+    daysRow.appendChild(document.createElement("div"));
+
+    for (let i = 1; i <= dayCount; i++) {
+        const day = document.createElement("div");
+        day.textContent = i;
+        day.style.textAlign = "center";
+        day.style.fontSize = "12px";
+        daysRow.appendChild(day);
+    }
+
+    // Grouper les essais par produit
+    const grouped = {};
+    essaisThisMonth.forEach(t => {
+        let productsArray = Array.isArray(t.products) ? t.products : [t.products || "unknown"];
+        productsArray.forEach(p => {
+            if (!grouped[p]) grouped[p] = [];
+            grouped[p].push(t);
+        });
+    });
+
+    // Construire les lignes produit
+    Object.keys(grouped).forEach(productId => {
+        const prod = products.find(p => p.id === productId) || { name: "Produit inconnu" };
+
+        const row = document.createElement("div");
+        row.className = "roadmap-row";
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = `150px repeat(${dayCount}, 40px)`;
+        grid.appendChild(row);
+
+        // Nom produit
+        const nameCell = document.createElement("div");
+        nameCell.className = "roadmap-product-name";
+        nameCell.textContent = prod.name;
+        row.appendChild(nameCell);
+
+        // Cases vides
+        for (let i = 0; i < dayCount; i++) {
+            const cell = document.createElement("div");
+            row.appendChild(cell);
+        }
+
+        // Blocs d'essais
+        grouped[productId].forEach(t => {
+            const start = new Date(t.start);
+            const end = new Date(t.end);
+
+            // Calculer début et fin dans le mois affiché
+            const startIndex = Math.max(0, Math.floor((start - monthStart) / (1000 * 60 * 60 * 24)));
+            const endIndex = Math.min(dayCount - 1, Math.floor((end - monthStart) / (1000 * 60 * 60 * 24)));
+
+            const duration = endIndex - startIndex + 1;
+
+            const item = document.createElement("div");
+            item.className = "roadmap-item";
+            item.style.left = (150 + startIndex * 40) + "px";
+            item.style.width = (duration * 40 - 4) + "px";
+            item.textContent = t.text;
+            item.onclick = () => showModal(t.id);
+
+            // Conflit
+            const conflict = grouped[productId].some(x =>
+                x.id !== t.id &&
+                new Date(x.start) <= end &&
+                new Date(x.end) >= start
+            );
+            if (conflict) item.classList.add("conflict");
+
+            row.appendChild(item);
+        });
+    });
+}
+
+function saveProducts() {
+    localStorage.setItem("products", JSON.stringify(products));
+}
+
+function openProductsModal() {
+    refreshProductsTable();
+    document.getElementById("productsModal").style.display = "block";
+}
+
+function closeProductsModal() {
+    document.getElementById("productsModal").style.display = "none";
+}
+
+function refreshProductsTable() {
+    const tbody = document.querySelector("#productsTable tbody");
+    tbody.innerHTML = "";
+
+    products.forEach(prod => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+            <td>
+                <input type="text" value="${prod.name}" 
+                       onchange="updateProductName('${prod.id}', this.value)"
+                       style="width:95%;">
+            </td>
+            <td>
+                <button onclick="deleteProduct('${prod.id}')">🗑️</button>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+}
+
+function addProduct() {
+    const name = document.getElementById("newProductName").value.trim();
+    if (!name) return;
+
+    const newProd = {
+        id: "prod-" + crypto.randomUUID(),
+        name
+    };
+
+    products.push(newProd);
+    saveProducts();
+    refreshProductsTable();
+    populateProductList(); // met à jour dans les tâches
+    document.getElementById("newProductName").value = "";
+}
+
+function updateProductName(id, newName) {
+    const p = products.find(p => p.id === id);
+    if (p) {
+        p.name = newName;
+        saveProducts();
+        populateProductList(); 
+    }
+}
+
+function deleteProduct(id) {
+    if (!confirm("Supprimer ce produit ?")) return;
+
+    products = products.filter(p => p.id !== id);
+    saveProducts();
+    refreshProductsTable();
+    populateProductList();
+}
+
+function populateProductList() {
+    const sel = document.getElementById("modal-product");
+    sel.innerHTML = "";
+    products.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+    });
+}
+
+function openKanban() {
+    // cacher la roadmap
+    document.getElementById("roadmapView").style.display = "none";
+
+    // cacher modal produit si ouvert
+    closeProductsModal();
+
+    // montrer les colonnes kanban
+    ["todo","doing","waiting","done"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "block";
+    });
+}

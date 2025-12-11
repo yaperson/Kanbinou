@@ -271,3 +271,70 @@ input:checked + .slider:before {
 input:checked + .slider {
   background-color: #155bca;
 }
+
+
+
+/* 
+  ROADMAP
+*/
+/* Conteneur complet */
+#roadmapHeader, #roadmapGrid {
+    display: grid;
+    grid-auto-rows: 30px;
+    margin-bottom: 10px;
+}
+
+/* Ligne du produit */
+.roadmap-row {
+    display: grid;
+    grid-auto-columns: 40px; /* largeur d’un jour */
+    align-items: center;
+    position: relative;
+    height: 35px;
+}
+
+/* Nom du produit */
+.roadmap-product-name {
+    font-weight: bold;
+    margin-right: 10px;
+    width: 150px;
+    text-align: right;
+    padding-right: 10px;
+}
+
+/* Bloc représentant un essai */
+.roadmap-item {
+    position: absolute;
+    height: 20px;
+    background: #4ea1ff;
+    color: white;
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    font-size: 12px;
+    top: 7px;
+}
+
+.roadmap-item.conflict {
+    background: #ff4e4e;
+}
+
+#monthSelector {
+  display: flex;
+  justify-content: center;
+}
+
+#monthSelector button {
+  width: fit-content;
+  margin: 1em;
+}
+
+.today-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: red;
+    z-index: 10;
+    pointer-events: none;
+}
