@@ -10,8 +10,6 @@ let products = JSON.parse(localStorage.getItem("products")) || [
     { id: "prod-1", name: "produit test" }
 ];
 
-
-
 document.addEventListener("DOMContentLoaded", function () {
     loadTasks();
     updateStatistics();
@@ -77,6 +75,7 @@ async function syncWithCloud() {
         alert("Erreur lors de la synchronisation");
     }
 }
+
 async function loadFromCloud() {
     const password = prompt("Mot de passe de synchronisation :");
     if (!password) return;
@@ -106,7 +105,6 @@ async function loadFromCloud() {
     updateStatistics();
     alert("Chargement depuis le cloud terminé !");
 }
-
 
 function loadTasks() {
     const columns = ["todo", "doing", "waiting", "done"];
@@ -246,9 +244,6 @@ function showModal(taskId) {
     document.getElementById("modal-end").value = data.end || "";
 }
 
-
-
-
 function saveModalData() {
     const data = taskData[currentTaskId];
     if (!data) return;
@@ -276,10 +271,7 @@ function saveModalData() {
     spans[0].textContent = data.text;
     spans[1].className = "type-badge type-" + data.type;
     spans[1].textContent = data.type.charAt(0).toUpperCase() + data.type.slice(1);
-
-
 }
-
 
 function closeModal() {
     document.getElementById("taskModal").style.display = "none";
@@ -898,6 +890,7 @@ function formatMonth(date) {
 
 
 let currentRoadmapMonth = new Date(); // Mois affiché par défaut
+let currentRoadmapDay = new Date().getDate();
 
 function changeMonth(offset) {
     currentRoadmapMonth.setMonth(currentRoadmapMonth.getMonth() + offset);
@@ -958,18 +951,25 @@ function buildRoadmap() {
     const daysRow = document.createElement("div");
     daysRow.style.gridColumn = `span ${dayCount + 1}`;
     daysRow.style.display = "grid";
-    daysRow.style.gridTemplateColumns = `150px repeat(${dayCount}, 40px)`;
+    daysRow.style.gridTemplateColumns = ` repeat(${dayCount}, 40px)`;
+    daysRow.style.justifyContent = "end";
     header.appendChild(daysRow);
 
+
     // Cellule vide pour les noms
-    daysRow.appendChild(document.createElement("div"));
 
     for (let i = 1; i <= dayCount; i++) {
         const day = document.createElement("div");
         day.textContent = i;
         day.style.textAlign = "center";
         day.style.fontSize = "12px";
+        day.style.borderRadius = "5em"
+        day.style.alignContent = "center"
         daysRow.appendChild(day);
+        if (currentRoadmapDay === i) {
+            day.style.background = "#ff6b6b"
+            console.log('OKAY day = currentRoadmapDay', currentRoadmapDay + " - " + i);
+        } 
     }
 
     // Grouper les essais par produit
