@@ -17,17 +17,20 @@
         <input type="text" list="search_task" id="searchBar" placeholder="Rechercher">
         <datalist id="search_task"></datalist>
       </div>
-      <div class="header_content-actions">
-        <button class="button-icon" title="Export format Kanbinou" onclick="promptExport()">Export kbn 💾</button>
-        <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
-        <button class="button-icon" title="importer un fichier Kanbinou"
+      <div class="header_content__actions">
+        <div class="header_content__actions-container">
+
+          <button class="button-icon" title="Export format Kanbinou" onclick="promptExport()">Export kbn 💾</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImportFile(event)" />
+          <button class="button-icon" title="importer un fichier Kanbinou"
           onclick="document.getElementById('importFile').click()">Importer 📁</button>
-
-        <button class="button-icon" onclick="openCSVExport()" title="Export Excel">Export CSV 📄</button>
-
-        <button onclick="openKanban()">Kanban</button>
-        <button onclick="openRoadmap()">Roadmap</button>
-        <button onclick="openProductsModal()">Produits</button>
+          <button class="button-icon" onclick="openCSVExport()" title="Export Excel">Export CSV 📄</button>
+        </div>
+        <div class="header_content__actions-container">
+          <button id="kanbanButton" onclick="openKanban()">Kanban 📑</button>
+          <button id="roadMapButton" onclick="openRoadmap()">Roadmap 📅</button>
+          <button onclick="openProductsModal()">Produits 🦼</button>
+        </div>
 
         <!-- <label class="sync-toggle">
             <input type="checkbox" id="cloudToggle" onchange="toggleSyncMode()" />

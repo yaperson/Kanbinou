@@ -5,6 +5,12 @@ let idCounter = 0;
 let activeFilter = null;
 let longPressTimer = null;
 
+let roadMapButton = document.getElementById("roadMapButton");
+let kanbanButton = document.getElementById("kanbanButton");
+    
+roadMapButton.style.background = "none";
+kanbanButton.style.background = "#e1f4ff";
+
 // TODO
 let products = JSON.parse(localStorage.getItem("products")) || [
     { id: "prod-1", name: "produit test" }
@@ -873,6 +879,8 @@ function openRoadmap() {
         if (el) el.style.display = "none";
     });
 
+    roadMapButton.style.background = "#e1f4ff";
+    kanbanButton.style.background = "none";
 
     buildRoadmap();
 }
@@ -966,9 +974,8 @@ function buildRoadmap() {
         day.style.borderRadius = "5em"
         day.style.alignContent = "center"
         daysRow.appendChild(day);
-        if (currentRoadmapDay === i) {
+        if (currentRoadmapMonth.getMonth() === currentMonth.getMonth() && currentRoadmapDay === i) {
             day.style.background = "#ff6b6b"
-            console.log('OKAY day = currentRoadmapDay', currentRoadmapDay + " - " + i);
         } 
     }
 
@@ -1127,4 +1134,8 @@ function openKanban() {
         const el = document.getElementById(id);
         if (el) el.style.display = "block";
     });
+
+    
+    roadMapButton.style.background = "none";
+    kanbanButton.style.background = "#e1f4ff";
 }

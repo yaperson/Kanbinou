@@ -166,10 +166,19 @@ form {
   justify-content: space-between;
   align-items: center;
 }
-.header_content-actions {
+.header_content__actions {
   display: flex;
-  align-items: center;
-  justify-content: space-evenly;
+  flex-direction: column;
+}
+.header_content__actions-container {
+  display: flex;
+  margin: 0.5em;
+}
+.header_content__actions-container button {
+  margin: 0 0.5em 0 0.5em;
+  background: none;
+  border: solid 1px black;
+  color: #000;
 }
 
 .column-separator {
