@@ -324,6 +324,11 @@ input:checked + .slider {
     top: 7px;
 }
 
+.roadmap-item:hover {
+  border: solid black 2px;
+  z-index:99;
+}
+
 .roadmap-item.conflict {
     background: #ff4e4e;
 }
