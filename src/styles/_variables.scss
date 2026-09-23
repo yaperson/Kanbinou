@@ -1,0 +1,56 @@
+// =============================================================================
+// Kanbinou - Variables SCSS & Thème
+// =============================================================================
+
+// Couleurs neutres & structure
+$color-bg: #f8fafc;
+$color-surface: #ffffff;
+$color-surface-hover: #f1f5f9;
+$color-border: #e2e8f0;
+$color-border-hover: #cbd5e1;
+$color-text-main: #0f172a;
+$color-text-muted: #64748b;
+$color-text-subtle: #94a3b8;
+
+// Couleurs principales
+$color-primary: #0284c7;
+$color-primary-light: #e0f2fe;
+$color-primary-dark: #0369a1;
+
+// Statuts & États
+$color-success: #10b981;
+$color-success-light: #d1fae5;
+$color-warning: #f59e0b;
+$color-warning-light: #fef3c7;
+$color-danger: #ef4444;
+$color-danger-light: #fee2e2;
+$color-info: #3b82f6;
+$color-info-light: #dbeafe;
+
+// Catégories / Types de tâches d'origine Kanbinou
+$cat-commercial: #c5e1a5;
+$cat-essais: #ffcc80;
+$cat-sav: #ef9a9a;
+$cat-livraison: #81d4fa;
+$cat-neutre: #e0e0e0;
+
+// Typographie
+$font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+$font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+// Espacements & Rayons
+$radius-sm: 6px;
+$radius-md: 10px;
+$radius-lg: 16px;
+$radius-full: 9999px;
+
+// Ombres
+$shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+$shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+$shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+$shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+$shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+// Transitions
+$transition-fast: 0.15s ease;
+$transition-normal: 0.25s ease;

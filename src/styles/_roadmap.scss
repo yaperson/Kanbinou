@@ -1,0 +1,344 @@
+// =============================================================================
+// Kanbinou - Roadmap & Calendrier de Réservation Multi-Ressources
+// =============================================================================
+
+.roadmap-view-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  overflow: hidden;
+  background: white;
+
+  .roadmap-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    .month-navigator {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .current-month-label {
+        font-size: 1.1rem;
+        font-weight: 700;
+        text-transform: capitalize;
+        min-width: 160px;
+        text-align: center;
+      }
+    }
+
+    .toolbar-right-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+
+      .toggle-filter-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #334155;
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        padding: 5px 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        user-select: none;
+        transition: all $transition-fast;
+
+        &:hover {
+          background: #f1f5f9;
+          border-color: #94a3b8;
+        }
+
+        input[type="checkbox"] {
+          cursor: pointer;
+          accent-color: $color-primary;
+          width: 15px;
+          height: 15px;
+        }
+      }
+    }
+
+    .roadmap-legend {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 0.8rem;
+      color: $color-text-muted;
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+
+        .legend-color {
+          width: 12px;
+          height: 12px;
+          border-radius: 3px;
+
+          &.color-normal {
+            background: $color-primary;
+          }
+
+          &.color-conflict {
+            background: $color-danger;
+          }
+
+          &.color-today {
+            background: #ef4444;
+          }
+        }
+      }
+    }
+  }
+
+  .roadmap-scroll-wrapper {
+    flex: 1;
+    overflow: auto;
+    border: 1px solid $color-border;
+    border-radius: $radius-lg;
+    position: relative;
+    background: #ffffff;
+  }
+
+  .roadmap-grid {
+    display: flex;
+    flex-direction: column;
+    min-width: fit-content;
+    position: relative;
+    min-height: 100%;
+  }
+
+  // Ligne indicatrice rouge de la journée d'aujourd'hui
+  .today-indicator-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #ef4444;
+    z-index: 15;
+    pointer-events: auto;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+
+    // Zone de survol élargie pour faciliter le hover
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -8px;
+      width: 18px;
+    }
+
+    .today-marker-badge {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ef4444;
+      color: white;
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+      letter-spacing: 0.3px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    &:hover .today-marker-badge {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-2px);
+    }
+  }
+
+  .roadmap-header-row {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f8fafc;
+    border-bottom: 2px solid $color-border;
+
+    .resource-header-cell {
+      width: 180px;
+      min-width: 180px;
+      padding: 10px 14px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: $color-text-muted;
+      border-right: 1px solid $color-border;
+      position: sticky;
+      left: 0;
+      background: #f8fafc;
+      z-index: 12;
+    }
+
+    .days-header {
+      display: flex;
+
+      .day-cell {
+        width: 36px;
+        min-width: 36px;
+        text-align: center;
+        padding: 6px 0;
+        font-size: 0.78rem;
+        border-right: 1px solid #f1f5f9;
+
+        &.is-today {
+          background: #fee2e2;
+          color: #b91c1c;
+          font-weight: 800;
+        }
+
+        &.is-weekend {
+          background: #f1f5f9;
+          color: $color-text-subtle;
+        }
+
+        .day-number {
+          font-weight: 600;
+        }
+
+        .day-letter {
+          font-size: 0.65rem;
+          color: $color-text-muted;
+          text-transform: uppercase;
+        }
+      }
+    }
+  }
+
+  .roadmap-resource-row {
+    display: flex;
+    border-bottom: 1px solid $color-border;
+    position: relative;
+    min-height: 48px;
+    align-items: center;
+
+    &:hover {
+      background: rgba(241, 245, 249, 0.5);
+    }
+
+    .resource-name-cell {
+      width: 180px;
+      min-width: 180px;
+      padding: 8px 14px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      border-right: 1px solid $color-border;
+      position: sticky;
+      left: 0;
+      background: white;
+      z-index: 5;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      .resource-sub {
+        font-size: 0.7rem;
+        font-weight: normal;
+        color: $color-text-muted;
+        display: block;
+      }
+    }
+
+    .resource-timeline-track {
+      position: relative;
+      display: flex;
+      flex: 1;
+      height: 100%;
+      align-self: stretch;
+
+      .track-day-bg {
+        width: 36px;
+        min-width: 36px;
+        height: 100%;
+        border-right: 1px solid #f8fafc;
+
+        &.is-today {
+          background: rgba(239, 68, 68, 0.05);
+        }
+
+        &.is-weekend {
+          background: rgba(0, 0, 0, 0.02);
+        }
+      }
+    }
+  }
+
+  .allocation-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(35%);
+    height: 32px;
+    border-radius: $radius-sm;
+    background: $color-primary;
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    box-shadow: $shadow-xs;
+    cursor: pointer;
+    transition: all $transition-fast;
+    z-index: 2;
+
+    &:hover {
+      filter: brightness(1.08);
+      // transform: translateY(-35%) translateY(-1px);
+      box-shadow: $shadow-sm;
+      z-index: 4;
+    }
+
+    &.has-conflict {
+      background: $color-danger;
+      animation: pulse-conflict 2s infinite;
+    }
+
+    .bar-user-badge {
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-size: 0.68rem;
+    }
+  }
+
+  .roadmap-empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #64748b;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+
+    p {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+  }
+}
+
+@keyframes pulse-conflict {
+  0% { box-shadow: 0 0 0 0 rgba($color-danger, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba($color-danger, 0); }
+  100% { box-shadow: 0 0 0 0 rgba($color-danger, 0); }
+}

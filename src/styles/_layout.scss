@@ -1,0 +1,201 @@
+// =============================================================================
+// Kanbinou - Layout & En-tête
+// =============================================================================
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  background: $color-surface;
+  border-bottom: 1px solid $color-border;
+  padding: 10px 20px;
+  box-shadow: $shadow-xs;
+  flex-shrink: 0;
+
+  .header-main-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: $radius-sm;
+    }
+
+    .brand-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: $color-text-main;
+      letter-spacing: -0.02em;
+    }
+
+    .tasks-counter {
+      font-size: 0.85rem;
+      color: $color-text-muted;
+      background: $color-surface-hover;
+      padding: 3px 8px;
+      border-radius: $radius-full;
+      border: 1px solid $color-border;
+    }
+  }
+
+  .header-search {
+    flex: 1;
+    max-width: 380px;
+    position: relative;
+
+    input {
+      width: 100%;
+      padding: 7px 14px 7px 34px;
+      font-size: 0.9rem;
+      background: $color-surface-hover;
+      border: 1px solid $color-border;
+      border-radius: $radius-md;
+      transition: all $transition-fast;
+
+      &:focus {
+        background: $color-surface;
+        border-color: $color-primary;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+      }
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: $color-text-subtle;
+      pointer-events: none;
+    }
+  }
+
+  .header-sort {
+    .sort-select {
+      padding: 7px 12px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: $color-text-main;
+      background: $color-surface-hover;
+      border: 1px solid $color-border;
+      border-radius: $radius-md;
+      cursor: pointer;
+      transition: all $transition-fast;
+
+      &:hover {
+        border-color: $color-border-hover;
+        background: $color-surface;
+      }
+
+      &:focus {
+        border-color: $color-primary;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+      }
+    }
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+// Barre de répartition des catégories
+.category-progress-bar {
+  display: flex;
+  height: 6px;
+  width: 100%;
+  border-radius: $radius-full;
+  overflow: hidden;
+  margin-top: 10px;
+  background: $color-border;
+
+  .progress-segment {
+    height: 100%;
+    transition: width $transition-normal;
+    cursor: pointer;
+
+    &:hover {
+      filter: brightness(0.9);
+    }
+  }
+}
+
+// Zone principale
+.app-main {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+// Boutons d'interface
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background: $color-surface;
+  color: $color-text-main;
+  transition: all $transition-fast;
+  white-space: nowrap;
+
+  &:hover {
+    background: $color-surface-hover;
+    border-color: $color-border-hover;
+  }
+
+  &.btn-primary {
+    background: $color-primary;
+    border-color: $color-primary;
+    color: white;
+
+    &:hover {
+      background: $color-primary-dark;
+      border-color: $color-primary-dark;
+    }
+  }
+
+  &.btn-active {
+    background: $color-primary-light;
+    border-color: #7dd3fc;
+    color: $color-primary-dark;
+    font-weight: 600;
+  }
+
+  &.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+  }
+
+  &.btn-danger {
+    background: $color-danger-light;
+    border-color: #fca5a5;
+    color: $color-danger;
+
+    &:hover {
+      background: $color-danger;
+      color: white;
+    }
+  }
+}

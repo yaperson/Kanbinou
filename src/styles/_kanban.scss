@@ -1,0 +1,480 @@
+// =============================================================================
+// Kanbinou - Kanban Board, Colonnes & Cartes de Tâches Épurées
+// =============================================================================
+
+// --- Conteneur Général du Tableau ---
+.kanban-view {
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(100vh - 120px);
+  padding: 16px 20px;
+  align-items: stretch;
+
+  // Disposition 1 : 3 Colonnes Plein Écran Imbriquées (Historique Kanbinou)
+  &.layout-nested3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    overflow: hidden;
+
+    .kanban-column, 
+    .kanban-nested-column {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: 100%;
+      height: 100%;
+      max-height: 100%;
+    }
+  }
+
+  // Disposition 2 : 4 Colonnes Étendues (Flat)
+  &.layout-flat4 {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+
+    .kanban-column {
+      flex: 0 0 310px;
+      max-width: 340px;
+      height: 100%;
+    }
+  }
+
+  // Responsive mobile : colonnes empilées verticalement
+  @media (max-width: 768px) {
+    &.layout-nested3,
+    &.layout-flat4 {
+      display: flex;
+      flex-direction: column;
+      height: auto;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px;
+
+      .kanban-column,
+      .kanban-nested-column {
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: 100%;
+        max-height: 520px;
+        margin-bottom: 16px;
+      }
+    }
+  }
+
+}
+
+// --- Colonne Standard (À faire, Terminé, ou Flat) ---
+.kanban-column {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: $radius-lg;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-shadow: $shadow-xs;
+  transition: all $transition-fast;
+  overflow: hidden;
+
+  &.is-drag-over {
+    background: #e2e8f0;
+    border-color: $color-primary;
+  }
+
+  .column-header {
+    padding: 12px 14px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    flex-shrink: 0;
+
+    .column-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .column-color-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: $radius-full;
+      }
+
+      h2 {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: $color-text-main;
+      }
+
+      .column-count-badge {
+        background: white;
+        border: 1px solid $color-border;
+        color: $color-text-muted;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 1px 7px;
+        border-radius: $radius-full;
+      }
+    }
+
+    .column-actions-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      .column-meta {
+        font-size: 0.75rem;
+        color: $color-text-subtle;
+        font-weight: 600;
+      }
+
+      .btn-column-sort {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: $radius-sm;
+        font-size: 0.85rem;
+        color: $color-text-muted;
+        background: white;
+        border: 1px solid $color-border;
+        cursor: pointer;
+        transition: all $transition-fast;
+
+        &:hover {
+          color: $color-primary-dark;
+          border-color: $color-primary;
+          background: $color-primary-light;
+        }
+
+        &.is-active {
+          color: $color-primary;
+          background: #e0f2fe;
+          border-color: #38bdf8;
+          font-weight: bold;
+        }
+
+        .sort-neutral-icon {
+          opacity: 0.4;
+          font-size: 0.75rem;
+        }
+      }
+    }
+  }
+
+  .column-task-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 80px;
+  }
+
+  .column-footer {
+    padding: 8px 10px 10px;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    flex-shrink: 0;
+
+    .quick-add-form {
+      display: flex;
+      gap: 6px;
+
+      input {
+        flex: 1;
+        background: white;
+        border: 1px solid $color-border;
+        border-radius: $radius-md;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+
+        &:focus {
+          border-color: $color-primary;
+          outline: none;
+        }
+      }
+
+      button {
+        background: white;
+        border: 1px solid $color-border;
+        border-radius: $radius-md;
+        padding: 0 10px;
+        font-weight: 600;
+        color: $color-primary;
+        cursor: pointer;
+
+        &:hover {
+          background: $color-primary-light;
+        }
+      }
+    }
+  }
+}
+
+// --- Colonne Centrale Imbriquée (En cours + Séparateur + En attente) ---
+.kanban-nested-column {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: $radius-lg;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-shadow: $shadow-xs;
+  overflow: hidden;
+
+  // Ratios de hauteur configurables
+  &.split-50-50 {
+    .subcolumn-top { flex: 1 1 50%; }
+    .subcolumn-bottom { flex: 1 1 50%; }
+  }
+
+  &.split-65-35 {
+    .subcolumn-top { flex: 1 1 65%; }
+    .subcolumn-bottom { flex: 1 1 35%; }
+  }
+
+  &.split-35-65 {
+    .subcolumn-top { flex: 1 1 35%; }
+    .subcolumn-bottom { flex: 1 1 65%; }
+  }
+
+  &.split-auto {
+    .subcolumn-top { flex: 1 1 auto; }
+    .subcolumn-bottom { flex: 1 1 auto; }
+  }
+
+  &.top-collapsed {
+    .subcolumn-bottom {
+      flex: 1 1 100% !important;
+    }
+  }
+
+  &.bottom-collapsed {
+    .subcolumn-top {
+      flex: 1 1 100% !important;
+    }
+  }
+
+  &.split-equal {
+    .nested-subcolumn { flex: 1 1 0; }
+  }
+
+  .nested-subcolumn {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; // Obligatoire pour le scroll interne
+    overflow: hidden;
+    transition: flex 0.2s ease, background $transition-fast;
+
+    &.is-minimized {
+      flex: 0 0 38px !important;
+      min-height: 38px !important;
+      overflow: hidden;
+
+      .column-header {
+        border-bottom: none;
+      }
+    }
+
+    &.is-drag-over {
+      background: #e2e8f0;
+    }
+
+    .column-header {
+      padding: 9px 14px 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      flex-shrink: 0;
+
+      .column-title-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .column-color-indicator {
+          width: 9px;
+          height: 9px;
+          border-radius: $radius-full;
+        }
+
+        h2 {
+          font-size: 0.9rem;
+          font-weight: 700;
+          color: $color-text-main;
+        }
+
+        .column-count-badge {
+          background: white;
+          border: 1px solid $color-border;
+          color: $color-text-muted;
+          font-size: 0.72rem;
+          font-weight: 600;
+          padding: 1px 6px;
+          border-radius: $radius-full;
+        }
+      }
+
+      .column-actions-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+
+        .column-meta {
+          font-size: 0.72rem;
+          color: $color-text-subtle;
+          font-weight: 600;
+        }
+
+        .btn-column-sort {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 22px;
+          height: 22px;
+          border-radius: $radius-sm;
+          font-size: 0.8rem;
+          color: $color-text-muted;
+          background: white;
+          border: 1px solid $color-border;
+          cursor: pointer;
+
+          &:hover {
+            color: $color-primary-dark;
+            border-color: $color-primary;
+            background: $color-primary-light;
+          }
+
+          &.is-active {
+            color: $color-primary;
+            background: #e0f2fe;
+            border-color: #38bdf8;
+            font-weight: bold;
+          }
+
+          .sort-neutral-icon {
+            opacity: 0.4;
+          }
+        }
+      }
+    }
+
+    .column-task-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      min-height: 40px;
+    }
+  }
+
+  // Séparateur historique Kanbinou v1
+  .column-separator {
+    height: 3px;
+    width: calc(100% - 24px);
+    margin: 2px auto;
+    background: #cbd5e1;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .empty-drop-hint {
+    padding: 10px;
+    text-align: center;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
+    margin: 4px 0;
+    user-select: none;
+  }
+}
+
+// --- Cartes de Tâches Épurées (Style Post-it Kanbinou) ---
+.task-card {
+  background-color: #fffae6;
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  user-select: none;
+  position: relative;
+
+  &:hover {
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
+    transform: translateY(-1px);
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  // Tâche dans la colonne 'En attente' : fond grisé historique Kanbinou
+  &.task-waiting {
+    background-color: #cfcfcd96 !important;
+    border-color: #b0b0b0;
+  }
+
+  &.is-dragging {
+    opacity: 0.4;
+  }
+
+  .task-card-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .task-title {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: #1e293b;
+    word-break: break-word;
+    flex: 1;
+    line-height: 1.3;
+  }
+
+  .task-badges-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  // Badge de type/catégorie avec couleurs d'origine Kanbinou
+  .type-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #222;
+    letter-spacing: 0.2px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    white-space: nowrap;
+  }
+
+  // Badge d'allocation produit / essai
+  .badge-mini-resource {
+    font-size: 0.72rem;
+    background: #e0f2fe;
+    color: #0369a1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #bae6fd;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+}

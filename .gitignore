@@ -1,2 +1,6 @@
-future.md
 /node_modules
+/dist
+future.md
+kanbinou.sqlite*
+.DS_Store
+Thumbs.db
