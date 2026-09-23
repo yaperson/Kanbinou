@@ -84,6 +84,40 @@
             Compte administrateur initial pré-configuré : <code>admin</code> / <code>admin</code>
           </p>
         </div>
+
+        <!-- Section Configuration du Serveur API -->
+        <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <label style="font-weight: 600; font-size: 0.85rem; color: #334155;">
+              Adresse du serveur API
+            </label>
+            <span v-if="api.isAvailable()" style="font-size: 0.75rem; color: #16a34a; font-weight: 600;">
+              Actif ({{ api.getBaseUrl() }})
+            </span>
+            <span v-else style="font-size: 0.75rem; color: #64748b;">
+              Mode local uniquement
+            </span>
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <input 
+              type="url" 
+              v-model="apiUrlInput" 
+              placeholder="ex: https://mon-kanbinou.onrender.com" 
+              style="flex: 1; padding: 7px 10px; font-size: 0.82rem; border: 1px solid #cbd5e1; border-radius: 6px;"
+            />
+            <button class="btn btn-secondary" style="white-space: nowrap; font-size: 0.82rem;" @click="saveApiUrl">
+              Enregistrer
+            </button>
+            <button v-if="apiUrlInput" class="btn" style="white-space: nowrap; font-size: 0.82rem; color: #94a3b8;" @click="clearApiUrl" title="Rétablir le mode par défaut">
+              ✕
+            </button>
+          </div>
+
+          <p style="font-size: 0.75rem; color: #64748b; margin-top: 6px; line-height: 1.35;">
+            Sur GitHub Pages, les données sont enregistrées en local dans votre navigateur. Pour synchroniser votre équipe, déployez <code>server.js</code> sur un hébergeur Node.js (ex: <strong>Render</strong>, <strong>Railway</strong>) et renseignez son adresse ci-dessus.
+          </p>
+        </div>
       </div>
 
       <div class="modal-footer" style="justify-content: flex-end;">
@@ -103,6 +137,7 @@ const store = useAppStore();
 const mode = ref('login');
 const loading = ref(false);
 const errorMsg = ref('');
+const apiUrlInput = ref(api.getRawBaseUrl());
 
 const form = ref({
   username: '',
@@ -114,8 +149,27 @@ function close() {
   store.closeModal();
 }
 
+function saveApiUrl() {
+  api.setBaseUrl(apiUrlInput.value);
+  errorMsg.value = '';
+  if (apiUrlInput.value) {
+    alert(`Adresse du serveur enregistrée : ${api.getBaseUrl()}`);
+  } else {
+    alert('Mode serveur par défaut rétabli.');
+  }
+}
+
+function clearApiUrl() {
+  apiUrlInput.value = '';
+  api.setBaseUrl('');
+}
+
 async function submitAuth() {
   errorMsg.value = '';
+  if (!api.isAvailable()) {
+    errorMsg.value = "Sur GitHub Pages, vous devez d'abord indiquer l'adresse de votre serveur API ci-dessous pour pouvoir vous connecter.";
+    return;
+  }
   loading.value = true;
   try {
     if (mode.value === 'login') {

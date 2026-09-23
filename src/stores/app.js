@@ -157,20 +157,24 @@ export const useAppStore = defineStore('app', {
         this.isOnline = false;
       });
 
-      // 3. Vérifier la session utilisateur existante
-      if (api.token) {
+      // 3. Vérifier la session utilisateur existante (si une API est configurée)
+      if (api.isAvailable() && api.token) {
         try {
           const res = await api.getMe();
-          this.user = res.user;
-          this.syncWithServer();
+          if (res && res.user) {
+            this.user = res.user;
+            this.syncWithServer();
+          }
         } catch (err) {
-          console.warn('[Auth] Session expirée');
+          console.warn('[Auth] Session expirée ou inaccessible');
           api.setToken(null);
         }
       }
 
       // 4. Se connecter aux Server-Sent Events (SSE) pour le temps réel
-      api.connectEvents(this.handleRealtimeEvent);
+      if (api.isAvailable()) {
+        api.connectEvents(this.handleRealtimeEvent);
+      }
     },
 
     // Charger les données depuis IndexedDB et synchroniser avec localStorage

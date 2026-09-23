@@ -2,11 +2,10 @@
 // Kanbinou - Service Client API & Temps Réel (SSE)
 // =============================================================================
 
-const API_BASE = '/api';
-
 class ApiService {
   constructor() {
     this.token = localStorage.getItem('kanbinou_token') || null;
+    this.customBaseUrl = localStorage.getItem('kanbinou_api_url') || '';
     this.eventSource = null;
     this.listeners = new Map();
   }
@@ -20,6 +19,38 @@ class ApiService {
     }
   }
 
+  getRawBaseUrl() {
+    return this.customBaseUrl;
+  }
+
+  setBaseUrl(url) {
+    this.customBaseUrl = (url || '').trim();
+    if (this.customBaseUrl) {
+      localStorage.setItem('kanbinou_api_url', this.customBaseUrl);
+    } else {
+      localStorage.removeItem('kanbinou_api_url');
+    }
+    if (this.eventSource) {
+      this.disconnectEvents();
+    }
+  }
+
+  getBaseUrl() {
+    if (this.customBaseUrl) {
+      const cleaned = this.customBaseUrl.replace(/\/+$/, '');
+      return cleaned.endsWith('/api') ? cleaned : `${cleaned}/api`;
+    }
+    // Si on est sur GitHub Pages (*.github.io) sans serveur distant explicite, aucune API locale n'existe
+    if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
+      return null;
+    }
+    return '/api';
+  }
+
+  isAvailable() {
+    return this.getBaseUrl() !== null;
+  }
+
   getHeaders() {
     const headers = { 'Content-Type': 'application/json' };
     if (this.token) {
@@ -29,7 +60,13 @@ class ApiService {
   }
 
   async request(endpoint, options = {}) {
-    const url = `${API_BASE}${endpoint}`;
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      // Pas de serveur API configuré (mode autonome local / GitHub Pages)
+      return null;
+    }
+
+    const url = `${baseUrl}${endpoint}`;
     const config = {
       ...options,
       headers: {
@@ -120,26 +157,33 @@ class ApiService {
 
   // --- Temps Réel : Server-Sent Events (SSE) ---
   connectEvents(onEventCallback) {
+    if (!this.isAvailable()) return;
+
     if (this.eventSource) {
       this.eventSource.close();
     }
 
-    this.eventSource = new EventSource(`${API_BASE}/events`);
+    const baseUrl = this.getBaseUrl();
+    try {
+      this.eventSource = new EventSource(`${baseUrl}/events`);
 
-    this.eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (onEventCallback) {
-          onEventCallback(data);
+      this.eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (onEventCallback) {
+            onEventCallback(data);
+          }
+        } catch (err) {
+          console.error('[SSE] Erreur parsing message :', err);
         }
-      } catch (err) {
-        console.error('[SSE] Erreur parsing message :', err);
-      }
-    };
+      };
 
-    this.eventSource.onerror = () => {
-      console.warn('[SSE] Connexion interrompue, reconnexion automatique...');
-    };
+      this.eventSource.onerror = () => {
+        console.warn('[SSE] Connexion interrompue, reconnexion automatique...');
+      };
+    } catch (err) {
+      console.warn('[SSE] Impossible d\'initialiser EventSource :', err);
+    }
   }
 
   disconnectEvents() {
