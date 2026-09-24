@@ -1,0 +1,15 @@
+# =============================================================================
+# Kanbinou - Orchestrateur Web & Sécurité Apache
+# =============================================================================
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Si la requête commence par api/, la transmettre au sous-dossier api/
+    RewriteRule ^api(/.*)?$ api/$1 [L,QSA]
+
+    # Rediriger la racine du dossier vers dist/
+    RewriteRule ^$ dist/ [L,R=301]
+</IfModule>

@@ -44,6 +44,20 @@ class ApiService {
     if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
       return null;
     }
+
+    // Détection automatique du sous-dossier d'hébergement (ex: /kanbinou/dist/ ou /kanbinou/)
+    if (typeof window !== 'undefined' && window.location.pathname) {
+      const pathname = window.location.pathname;
+      if (pathname.includes('/dist')) {
+        const rootPath = pathname.substring(0, pathname.indexOf('/dist')).replace(/\/+$/, '');
+        return `${rootPath}/api`;
+      }
+      const match = pathname.match(/^(\/[^\/]+)/);
+      if (match && match[1] && match[1] !== '/' && match[1] !== '/api') {
+        return `${match[1]}/api`;
+      }
+    }
+
     return '/api';
   }
 

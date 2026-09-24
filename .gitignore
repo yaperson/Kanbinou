@@ -1,5 +1,8 @@
 /node_modules
 /dist
+/kanbinou/dist
+api/data/.ht_*
+kanbinou/api/data/.ht_*
 future.md
 kanbinou.sqlite*
 .DS_Store

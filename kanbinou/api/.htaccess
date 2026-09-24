@@ -1,0 +1,23 @@
+# =============================================================================
+# Kanbinou - Protection & Routage Sécurisé Apache pour OVH Mutualisé
+# =============================================================================
+
+# 1. Désactiver le listage des dossiers
+Options -Indexes
+
+# 2. Bloquer tout accès direct aux bases de données, clés secrètes et fichiers de sauvegarde
+<FilesMatch "\.(sqlite|db|key|json|log|sh|sql)$">
+    Order Deny,Allow
+    Deny from all
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# 3. Routage propre de toutes les requêtes vers index.php
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
