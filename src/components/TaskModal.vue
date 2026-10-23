@@ -6,7 +6,7 @@
         <h3>{{ isNewTask ? 'Nouvelle tâche' : 'Détails de la tâche' }}</h3>
         <div class="modal-header-actions">
           <button v-if="!isNewTask" class="btn btn-sm" type="button" @click="printDetails" title="Imprimer la fiche">Imprimer</button>
-          <button v-if="!isNewTask" class="btn btn-sm" type="button" @click="downloadICS" title="Exporter au format calendrier iCal">.ICS</button>
+          <button v-if="!isNewTask" class="btn btn-sm btn-outline" type="button" @click="addToCalendar" title="Ajouter directement dans votre agenda">📅 Agenda</button>
           <button class="close-btn" type="button" @click="close">&times;</button>
         </div>
       </div>
@@ -281,35 +281,39 @@ function printDetails() {
   printWindow.document.close();
 }
 
-function downloadICS() {
+function addToCalendar() {
   if (!taskForm.value) return;
   const t = taskForm.value;
-  const start = t.startDate ? t.startDate.replace(/-/g, '') : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const end = t.endDate ? t.endDate.replace(/-/g, '') : start;
+  
+  // Dates au format compact YYYYMMDD
+  const rawStart = t.startDate || new Date().toISOString().slice(0, 10);
+  const startStr = rawStart.replace(/-/g, '');
+  
+  // Pour Google Calendar, la date de fin sur journée entière est exclusive (lendemain)
+  let endStr = startStr;
+  if (t.endDate) {
+    const endD = new Date(t.endDate);
+    endD.setDate(endD.getDate() + 1);
+    endStr = endD.toISOString().slice(0, 10).replace(/-/g, '');
+  } else {
+    const startD = new Date(rawStart);
+    startD.setDate(startD.getDate() + 1);
+    endStr = startD.toISOString().slice(0, 10).replace(/-/g, '');
+  }
 
-  const icsContent = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Kanbinou//FR',
-    'BEGIN:VEVENT',
-    `UID:${t.id}@kanbinou`,
-    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
-    `DTSTART;VALUE=DATE:${start}`,
-    `DTEND;VALUE=DATE:${end}`,
-    `SUMMARY:${t.title}`,
-    `DESCRIPTION:${t.description || ''}`,
-    `LOCATION:${t.sensitive.address || ''}`,
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ].join('\r\n');
+  const res = store.resources.find(r => r.id === t.resourceId);
+  const title = (res ? `[${res.name}] ` : '') + t.title;
+  
+  let details = t.description || '';
+  if (t.sensitive?.phone) details += `\n📞 Tél : ${t.sensitive.phone}`;
+  if (t.sensitive?.email) details += `\n✉️ Email : ${t.sensitive.email}`;
+  if (res) details += `\n🦼 Matériel : ${res.name}`;
+  
+  const location = t.sensitive?.address || '';
 
-  const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${t.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startStr}/${endStr}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
+  
+  window.open(gcalUrl, '_blank');
 }
 
 function escapeXml(unsafe) {

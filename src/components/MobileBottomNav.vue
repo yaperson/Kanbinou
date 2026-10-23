@@ -198,7 +198,6 @@ function openModal(modalName) {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #0284c7, #0369a1);
     color: white;
     display: flex;
     align-items: center;

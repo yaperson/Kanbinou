@@ -72,7 +72,6 @@ export const useAppStore = defineStore('app', {
     },
     currentView: 'kanban', // 'kanban' | 'roadmap'
     searchQuery: '',
-    sortBy: localStorage.getItem('kanbinou_sort') || 'manual', // 'manual' | 'date-desc' | 'date-asc' | 'alpha' | 'time-desc'
     activeCategoryFilter: null,
     activeModal: null, // null | 'task' | 'resources' | 'sync' | 'export' | 'settings'
     settingsTab: 'layout', // 'layout' | 'terminology' | 'categories'
@@ -88,10 +87,8 @@ export const useAppStore = defineStore('app', {
       centerColumnIds: ['doing', 'waiting'],
       rightColumnIds: ['done'],
       splitRatio: '50-50', // '50-50' | '65-35' | '35-65' | 'auto' | 'equal'
-      separatorThickness: 3, // 2 | 3 | 5
       grayBottomBackground: true,
-      graySubcolumnIds: ['waiting'],
-      collapsedSubcol: null // null | 'top' | 'bottom'
+      graySubcolumnIds: ['waiting']
     },
     isOnline: navigator.onLine,
     isSyncing: false,
@@ -129,17 +126,6 @@ export const useAppStore = defineStore('app', {
           (t.description && t.description.toLowerCase().includes(query)) ||
           (t.sensitive && t.sensitive.address && t.sensitive.address.toLowerCase().includes(query))
         );
-      }
-
-      // Application du tri
-      if (state.sortBy === 'date-desc') {
-        result = [...result].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      } else if (state.sortBy === 'date-asc') {
-        result = [...result].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-      } else if (state.sortBy === 'alpha') {
-        result = [...result].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-      } else if (state.sortBy === 'time-desc') {
-        result = [...result].sort((a, b) => (parseFloat(b.time) || 0) - (parseFloat(a.time) || 0));
       }
 
       return result;
@@ -948,11 +934,6 @@ export const useAppStore = defineStore('app', {
       } finally {
         this.isSyncing = false;
       }
-    },
-
-    setSortBy(sortKey) {
-      this.sortBy = sortKey;
-      localStorage.setItem('kanbinou_sort', sortKey);
     },
 
     // Configuration de disposition

@@ -15,7 +15,6 @@
       <div 
         v-if="index > 0"
         class="column-separator"
-        :style="{ height: (store.nestedConfig?.separatorThickness || 3) + 'px' }"
       ></div>
 
       <!-- Sous-colonne -->

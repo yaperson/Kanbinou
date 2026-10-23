@@ -202,19 +202,18 @@
   }
 }
 
-// Barre de répartition des catégories
+// Barre de répartition des catégories (simple et épaissie pour un clic facile)
 .category-progress-bar {
   display: flex;
-  height: 5px;
+  height: 0.5em;
   width: 100%;
-  border-radius: $radius-full;
   overflow: hidden;
   background: $color-border;
   flex-shrink: 0;
 
   .progress-segment {
     height: 100%;
-    transition: width $transition-normal;
+    transition: width $transition-normal, opacity $transition-fast;
     cursor: pointer;
 
     &:hover {
@@ -259,6 +258,18 @@
     &:hover {
       background: $color-primary-dark;
       border-color: $color-primary-dark;
+    }
+  }
+
+  &.btn-outline {
+    background: white;
+    border: 1px solid $color-border;
+    color: $color-text-muted;
+
+    &:hover {
+      background: $color-surface-hover;
+      border-color: $color-border-hover;
+      color: $color-text-main;
     }
   }
 

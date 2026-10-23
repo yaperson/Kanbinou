@@ -8,22 +8,9 @@
     :draggable="!store.isMobile"
     @dragstart="onDragStart"
     @click="openDetails"
-    @contextmenu.prevent="startInlineEdit"
   >
-    <!-- Édition inline du titre -->
-    <input 
-      v-if="isEditing" 
-      ref="editInput"
-      v-model="editTitle"
-      class="task-inline-input"
-      @blur="saveInlineEdit"
-      @keydown.enter.prevent="saveInlineEdit"
-      @keydown.esc="cancelInlineEdit"
-      @click.stop
-    />
-
-    <!-- Contenu épuré : Titre en gras à gauche, badge de catégorie à droite -->
-    <div v-else class="task-card-content" @dblclick.stop="startInlineEdit">
+    <!-- Contenu épuré : Titre en gras à gauche, badges à droite -->
+    <div class="task-card-content">
       <span class="task-title">{{ task.title }}</span>
 
       <div class="task-badges-inline">
@@ -45,7 +32,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue';
+import { computed } from 'vue';
 import { useAppStore } from '../stores/app.js';
 
 const props = defineProps({
@@ -57,13 +44,10 @@ const props = defineProps({
 
 const store = useAppStore();
 
-const isEditing = ref(false);
-const editTitle = ref('');
-const editInput = ref(null);
-
 const category = computed(() => store.categories.find(c => c.id === props.task.categoryId));
 const categoryName = computed(() => category.value ? category.value.name : 'Neutre');
 const categoryColor = computed(() => category.value ? category.value.color : '#e0e0e0');
+
 const isBottomSubcol = computed(() => {
   const grayList = store.nestedConfig?.graySubcolumnIds;
   if (Array.isArray(grayList) && grayList.length > 0) {
@@ -87,47 +71,6 @@ function onDragStart(event) {
 }
 
 function openDetails() {
-  if (!isEditing.value) {
-    store.openTaskModal(props.task.id);
-  }
-}
-
-function startInlineEdit() {
-  if (store.isMobile) return;
-  editTitle.value = props.task.title;
-  isEditing.value = true;
-  nextTick(() => {
-    if (editInput.value) {
-      editInput.value.focus();
-      editInput.value.select();
-    }
-  });
-}
-
-function saveInlineEdit() {
-  if (isEditing.value) {
-    const trimmed = editTitle.value.trim();
-    if (trimmed && trimmed !== props.task.title) {
-      store.saveTask({ ...props.task, title: trimmed });
-    }
-    isEditing.value = false;
-  }
-}
-
-function cancelInlineEdit() {
-  isEditing.value = false;
+  store.openTaskModal(props.task.id);
 }
 </script>
-
-<style scoped>
-.task-inline-input {
-  width: 100%;
-  padding: 4px 8px;
-  font-size: 0.92rem;
-  font-weight: 700;
-  border: 1px solid #0284c7;
-  border-radius: 4px;
-  outline: none;
-  background: white;
-}
-</style>
