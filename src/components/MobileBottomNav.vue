@@ -198,12 +198,17 @@ function openModal(modalName) {
     width: 44px;
     height: 44px;
     border-radius: 50%;
+    background: #0284c7;
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease, transform 0.15s ease;
+
+    svg {
+      display: block;
+      stroke: white;
+    }
   }
 
   .tab-label {
@@ -215,8 +220,8 @@ function openModal(modalName) {
 
   &:active {
     .action-btn-circle {
-      transform: scale(0.92);
-      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+      transform: scale(0.95);
+      background: #0369a1;
     }
   }
 }
