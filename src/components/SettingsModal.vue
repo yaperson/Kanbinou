@@ -324,8 +324,16 @@
         <!-- ONGLET 2 : MES COLONNES (GESTION COMPLÈTE) -->
         <!-- ============================================================ -->
         <div v-if="activeTab === 'columns'" class="tab-content">
+          <div v-if="!isAdmin" class="admin-readonly-banner">
+            <span class="banner-icon">🔒</span>
+            <div class="banner-info">
+              <strong>Mode consultation</strong>
+              <p>L'organisation des étapes est commune à toute l'équipe et modérable uniquement par un administrateur.</p>
+            </div>
+          </div>
+
           <!-- 1. Formulaire de création -->
-          <div class="settings-section">
+          <div v-if="isAdmin" class="settings-section">
             <h3 class="section-heading">1. Créer une nouvelle étape</h3>
             <p class="settings-desc">
               Ajoutez une nouvelle colonne pour suivre vos processus métiers (ex : Facturé, Contrôle qualité, SAV, Livraison...).
@@ -353,9 +361,9 @@
 
           <!-- 2. Liste de toutes les colonnes avec renommage, couleur et réorganisation -->
           <div class="settings-section">
-            <h3 class="section-heading">2. Vos étapes et leur ordre d'apparition ({{ store.columns.length }})</h3>
+            <h3 class="section-heading">{{ isAdmin ? '2.' : '1.' }} Vos étapes et leur ordre d'apparition ({{ store.columns.length }})</h3>
             <p class="settings-desc">
-              Vous pouvez <strong>renommer</strong> chaque colonne, changer sa <strong>couleur</strong> et modifier son <strong>ordre d'apparition</strong> dans le tableau avec les flèches ▲ et ▼ :
+              {{ isAdmin ? 'Vous pouvez renommer chaque colonne, changer sa couleur et modifier son ordre d\'apparition dans le tableau avec les flèches ▲ et ▼ :' : 'Voici les étapes partagées configurées pour votre équipe :' }}
             </p>
 
             <div class="simple-columns-list">
@@ -367,19 +375,21 @@
                 <input 
                   type="color" 
                   :value="col.color || '#64748b'"
+                  :disabled="!isAdmin"
                   @input="e => onLiveColumnColorInput(col, e.target.value)"
                   @change="e => onUpdateColumnColor(col, e.target.value)"
                   class="simple-color-picker mini"
-                  title="Changer la couleur"
+                  :title="isAdmin ? 'Changer la couleur' : 'Couleur de l\'étape'"
                 />
 
                 <!-- Nom de la colonne modifiable -->
                 <input 
                   type="text" 
                   :value="col.title" 
+                  :readonly="!isAdmin"
                   @change="e => onUpdateColumnTitle(col, e.target.value)"
                   class="col-name-input"
-                  title="Cliquez pour renommer cette étape"
+                  :title="isAdmin ? 'Cliquez pour renommer cette étape' : 'Nom de l\'étape'"
                 />
 
                 <!-- Nombre de tâches en cours -->
@@ -388,7 +398,7 @@
                 </span>
 
                 <!-- Flèches pour changer l'ordre des colonnes -->
-                <div class="col-reorder-arrows">
+                <div v-if="isAdmin" class="col-reorder-arrows">
                   <button 
                     type="button" 
                     class="btn-arrow" 
@@ -410,7 +420,7 @@
                   Essentielle
                 </span>
                 <button 
-                  v-else
+                  v-else-if="isAdmin"
                   type="button" 
                   class="btn-delete-col" 
                   @click="confirmDeleteColumn(col)"
@@ -422,7 +432,7 @@
             </div>
 
             <!-- Réinitialiser -->
-            <div class="reset-footer-row">
+            <div v-if="isAdmin" class="reset-footer-row">
               <button type="button" class="btn btn-outline btn-sm" @click="confirmResetColumns">
                 Restaurer les 4 étapes d'origine (À faire, En cours, En attente, Terminé)
               </button>
@@ -435,8 +445,16 @@
         <!-- ONGLET 3 : ÉTIQUETTES & COULEURS -->
         <!-- ============================================================ -->
         <div v-if="activeTab === 'categories'" class="tab-content">
+          <div v-if="!isAdmin" class="admin-readonly-banner">
+            <span class="banner-icon">🔒</span>
+            <div class="banner-info">
+              <strong>Mode consultation</strong>
+              <p>Les catégories et étiquettes sont communes à toute l'équipe et modérables uniquement par un administrateur.</p>
+            </div>
+          </div>
+
           <!-- 1. Ajouter une étiquette -->
-          <div class="settings-section">
+          <div v-if="isAdmin" class="settings-section">
             <h3 class="section-heading">Créer une nouvelle étiquette</h3>
             <p class="settings-desc">
               Les étiquettes permettent de repérer vos tâches avec une pastille de couleur (ex : Commercial, SAV, Urgent...).
@@ -488,9 +506,9 @@
 
           <!-- 2. Vos étiquettes existantes -->
           <div class="settings-section">
-            <h3 class="section-heading">Vos étiquettes existantes ({{ store.categories.length }})</h3>
+            <h3 class="section-heading">{{ isAdmin ? '2.' : '1.' }} Vos étiquettes existantes ({{ store.categories.length }})</h3>
             <p class="settings-desc">
-              Cliquez sur une couleur pour la changer en direct, ou modifiez le nom.
+              {{ isAdmin ? 'Cliquez sur une couleur pour la changer en direct, ou modifiez le nom.' : 'Liste des étiquettes partagées configurées pour votre équipe :' }}
             </p>
 
             <div class="tags-cards-list">
@@ -504,10 +522,11 @@
                     <input 
                       type="text" 
                       :value="cat.name" 
+                      :readonly="!isAdmin"
                       @change="e => onUpdateCategoryName(cat, e.target.value)"
                       class="tag-input-name"
                       placeholder="Nom de l'étiquette..."
-                      title="Modifier le nom de l'étiquette"
+                      :title="isAdmin ? 'Modifier le nom de l\'étiquette' : 'Nom de l\'étiquette'"
                     />
                   </div>
 
@@ -519,13 +538,14 @@
                       <input 
                         type="checkbox" 
                         :checked="cat.isRoadmapEligible"
+                        :disabled="!isAdmin"
                         @change="e => onUpdateCategoryRoadmap(cat, e.target.checked)"
                       />
                       <span>Roadmap</span>
                     </label>
 
                     <button 
-                      v-if="cat.id !== 'neutre'"
+                      v-if="isAdmin && cat.id !== 'neutre'"
                       type="button" 
                       class="btn-delete-tag" 
                       @click="confirmDeleteCategory(cat)"
@@ -533,12 +553,12 @@
                     >
                       🗑️
                     </button>
-                    <span v-else class="lock-hint" title="Étiquette de base essentielle">🔒</span>
+                    <span v-else-if="cat.id === 'neutre'" class="lock-hint" title="Étiquette de base essentielle">🔒</span>
                   </div>
                 </div>
 
                 <!-- Ligne inférieure : Palette de couleurs dédiée -->
-                <div class="tag-pro-bottom">
+                <div v-if="isAdmin" class="tag-pro-bottom">
                   <span class="tag-color-label">Couleur :</span>
                   
                   <div class="tag-color-picker-box">
@@ -569,7 +589,7 @@
             </div>
 
             <!-- Rétablir -->
-            <div class="reset-footer-row">
+            <div v-if="isAdmin" class="reset-footer-row">
               <button type="button" class="btn btn-outline btn-sm" @click="restoreDefaultColors">
                 Rétablir les 5 étiquettes et couleurs historiques
               </button>
@@ -680,6 +700,8 @@ import { ref, computed, watch } from 'vue';
 import { useAppStore } from '../stores/app.js';
 
 const store = useAppStore();
+
+const isAdmin = computed(() => !store.user || store.user.role === 'admin');
 
 const activeTab = ref(store.settingsTab || 'layout');
 watch(() => store.settingsTab, (tab) => {
@@ -2297,6 +2319,36 @@ const previewExtraCols = computed(() => {
   font-size: 0.82rem;
   color: #16a34a;
   font-weight: 600;
+}
+
+.admin-readonly-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+
+  .banner-icon {
+    font-size: 1.4rem;
+  }
+
+  .banner-info {
+    strong {
+      display: block;
+      font-size: 0.88rem;
+      color: #1e293b;
+      margin-bottom: 2px;
+    }
+    p {
+      margin: 0;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+  }
 }
 
 .modal-footer {

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="col1Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="col2Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="col3Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Fond avec coins arrondis -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)"/>
+
+  <!-- Colonne 1 : À faire -->
+  <g filter="url(#shadow)">
+    <rect x="76" y="100" width="100" height="312" rx="20" fill="white" fill-opacity="0.08"/>
+    <rect x="92" y="130" width="68" height="60" rx="12" fill="url(#col1Grad)"/>
+    <rect x="92" y="210" width="68" height="90" rx="12" fill="white" fill-opacity="0.2"/>
+    <rect x="92" y="320" width="68" height="60" rx="12" fill="white" fill-opacity="0.2"/>
+  </g>
+
+  <!-- Colonne 2 : En cours -->
+  <g filter="url(#shadow)">
+    <rect x="206" y="100" width="100" height="312" rx="20" fill="white" fill-opacity="0.08"/>
+    <rect x="222" y="130" width="68" height="95" rx="12" fill="url(#col2Grad)"/>
+    <rect x="222" y="245" width="68" height="70" rx="12" fill="white" fill-opacity="0.2"/>
+  </g>
+
+  <!-- Colonne 3 : Terminé -->
+  <g filter="url(#shadow)">
+    <rect x="336" y="100" width="100" height="312" rx="20" fill="white" fill-opacity="0.08"/>
+    <rect x="352" y="130" width="68" height="70" rx="12" fill="white" fill-opacity="0.2"/>
+    <rect x="352" y="220" width="68" height="110" rx="12" fill="url(#col3Grad)"/>
+  </g>
+</svg>

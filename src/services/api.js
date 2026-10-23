@@ -4,19 +4,30 @@
 
 class ApiService {
   constructor() {
-    this.token = localStorage.getItem('kanbinou_token') || null;
+    this.token = localStorage.getItem('kanbinou_token') || sessionStorage.getItem('kanbinou_token') || null;
     this.customBaseUrl = localStorage.getItem('kanbinou_api_url') || '';
     this.eventSource = null;
     this.listeners = new Map();
   }
 
-  setToken(token) {
+  setToken(token, remember = true) {
     this.token = token;
     if (token) {
-      localStorage.setItem('kanbinou_token', token);
+      if (remember) {
+        localStorage.setItem('kanbinou_token', token);
+        sessionStorage.removeItem('kanbinou_token');
+      } else {
+        sessionStorage.setItem('kanbinou_token', token);
+        localStorage.removeItem('kanbinou_token');
+      }
     } else {
       localStorage.removeItem('kanbinou_token');
+      sessionStorage.removeItem('kanbinou_token');
     }
+  }
+
+  isRemembered() {
+    return !!localStorage.getItem('kanbinou_token');
   }
 
   getRawBaseUrl() {
@@ -93,10 +104,21 @@ class ApiService {
       config.body = JSON.stringify(config.body);
     }
 
-    const response = await fetch(url, config);
+    let response;
+    try {
+      response = await fetch(url, config);
+    } catch (networkErr) {
+      const err = new Error('Serveur injoignable ou appareil hors-ligne');
+      err.status = 0;
+      err.isNetworkError = true;
+      throw err;
+    }
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Erreur serveur (${response.status})`);
+      const error = new Error(errorData.error || `Erreur serveur (${response.status})`);
+      error.status = response.status;
+      throw error;
     }
 
     if (response.status === 204) return null;
@@ -104,21 +126,34 @@ class ApiService {
   }
 
   // --- Auth ---
-  async login(username, password) {
+  async login(username, password, remember = true) {
     const res = await this.request('/auth/login', {
       method: 'POST',
-      body: { username, password }
+      body: { username, password, remember }
     });
-    this.setToken(res.token);
+    if (res && res.token) {
+      this.setToken(res.token, remember);
+    }
     return res;
   }
 
-  async register(username, password, displayName) {
+  async getAuthStatus() {
+    try {
+      return await this.request('/auth/status');
+    } catch {
+      return { initialized: true };
+    }
+  }
+
+  async register(username, password, displayName, role = 'user', remember = true) {
     const res = await this.request('/auth/register', {
       method: 'POST',
-      body: { username, password, displayName }
+      body: { username, password, displayName, role, remember }
     });
-    this.setToken(res.token);
+    // Si c'est l'administrateur initial qui s'enregistre, le token est renvoyé
+    if (res && res.token) {
+      this.setToken(res.token, remember);
+    }
     return res;
   }
 
@@ -157,7 +192,28 @@ class ApiService {
   }
 
   async deleteAllocation(id) {
-    return this.request(`/allocations/${id}`, { method: 'DELETE' });
+    try {
+      return await this.request(`/allocations/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      return await this.request(`/allocations/${id}/delete`, { method: 'POST' });
+    }
+  }
+
+  // --- Tasks ---
+  async getTasks() {
+    return this.request('/tasks');
+  }
+
+  async createTask(task) {
+    return this.request('/tasks', { method: 'POST', body: task });
+  }
+
+  async deleteTask(id) {
+    try {
+      return await this.request(`/tasks/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      return await this.request(`/tasks/${id}/delete`, { method: 'POST' });
+    }
   }
 
   // --- Configuration ---
@@ -175,13 +231,20 @@ class ApiService {
 
     if (this.eventSource) {
       this.eventSource.close();
+      this.eventSource = null;
     }
 
     const baseUrl = this.getBaseUrl();
     try {
       this.eventSource = new EventSource(`${baseUrl}/events`);
+      let errorCount = 0;
+
+      this.eventSource.onopen = () => {
+        errorCount = 0;
+      };
 
       this.eventSource.onmessage = (event) => {
+        errorCount = 0;
         try {
           const data = JSON.parse(event.data);
           if (onEventCallback) {
@@ -193,7 +256,11 @@ class ApiService {
       };
 
       this.eventSource.onerror = () => {
-        console.warn('[SSE] Connexion interrompue, reconnexion automatique...');
+        errorCount++;
+        // Si le serveur a fermé la connexion (ex: HTTP 204 sur PHP) ou après 2 échecs
+        if (this.eventSource && (this.eventSource.readyState === EventSource.CLOSED || errorCount >= 2)) {
+          this.disconnectEvents();
+        }
       };
     } catch (err) {
       console.warn('[SSE] Impossible d\'initialiser EventSource :', err);

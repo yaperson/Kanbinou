@@ -1,8 +1,11 @@
 <template>
   <div 
     class="task-card"
-    :class="{ 'task-waiting': isBottomSubcol && store.nestedConfig?.grayBottomBackground !== false }"
-    draggable="true"
+    :class="{ 
+      'task-waiting': isBottomSubcol && store.nestedConfig?.grayBottomBackground !== false,
+      'is-touch-device': store.isMobile
+    }"
+    :draggable="!store.isMobile"
     @dragstart="onDragStart"
     @click="openDetails"
     @contextmenu.prevent="startInlineEdit"
@@ -75,6 +78,10 @@ const linkedResource = computed(() => {
 });
 
 function onDragStart(event) {
+  if (store.isMobile) {
+    event.preventDefault();
+    return;
+  }
   event.dataTransfer.setData('text/plain', props.task.id);
   event.dataTransfer.effectAllowed = 'move';
 }
@@ -86,6 +93,7 @@ function openDetails() {
 }
 
 function startInlineEdit() {
+  if (store.isMobile) return;
   editTitle.value = props.task.title;
   isEditing.value = true;
   nextTick(() => {

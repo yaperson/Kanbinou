@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "server": "node server.js",
     "start": "node server.js",
-    "build:ovh": "vite build && node -e \"const fs = require('fs'); fs.cpSync('dist', 'kanbinou/dist', { recursive: true }); fs.cpSync('api', 'kanbinou/api', { recursive: true }); console.log('Dossier kanbinou prêt pour OVH !');\""
+    "build:ovh": "vite build && node -e \"const fs = require('fs'); fs.mkdirSync('kanbinou', { recursive: true }); fs.cpSync('dist', 'kanbinou', { recursive: true }); fs.cpSync('api', 'kanbinou/api', { recursive: true }); console.log('Dossier kanbinou prêt pour OVH !');\""
   },
   "repository": {
     "type": "git",

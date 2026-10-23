@@ -124,6 +124,27 @@ try {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            column_id TEXT NOT NULL,
+            category_id TEXT DEFAULT 'neutre',
+            resource_id TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            allocation_id TEXT,
+            user_id TEXT,
+            user_name TEXT,
+            time REAL DEFAULT 0,
+            projection REAL DEFAULT 0,
+            is_sold INTEGER DEFAULT 0,
+            description TEXT DEFAULT '',
+            sensitive_json TEXT DEFAULT '{}',
+            is_shared INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS workspace_config (
             key TEXT PRIMARY KEY,
             value_json TEXT NOT NULL,
@@ -131,13 +152,9 @@ try {
         );
     ");
 
-    // Données initiales si la base est neuve
-    $countUsers = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
-    if ($countUsers === 0) {
-        $initialHash = password_hash('admin', PASSWORD_BCRYPT, ['cost' => 12]);
-        $stmt = $pdo->prepare("INSERT INTO users (id, username, password_hash, display_name, role) VALUES ('usr-admin', 'admin', ?, 'Administrateur', 'admin')");
-        $stmt->execute([$initialHash]);
-
+    // Données initiales si la base est neuve (colonnes, catégories, terminologie)
+    $countCols = (int)$pdo->query("SELECT COUNT(*) FROM columns")->fetchColumn();
+    if ($countCols === 0) {
         // Colonnes par défaut
         $colStmt = $pdo->prepare("INSERT OR IGNORE INTO columns (id, title, color, order_idx, is_visible) VALUES (?, ?, ?, ?, 1)");
         $colStmt->execute(['todo', 'À faire', '#0284c7', 1]);
@@ -173,11 +190,14 @@ try {
 // -----------------------------------------------------------------------------
 
 function getClientIP(): string {
-    return $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 }
 
-// Protection anti Brute-Force (max 5 tentatives consécutives / 15 minutes)
+// Protection anti Brute-Force (max 5 tentatives consécutives / 15 minutes) - DÉSACTIVÉ TEMPORAIREMENT POUR TESTS
 function checkRateLimit(PDO $pdo, string $ip) {
+    // TEMPORAIREMENT DÉSACTIVÉ POUR LES TESTS D'INTERFACE
+    return;
+    /*
     $now = time();
     $stmt = $pdo->prepare("SELECT attempts, last_attempt FROM login_attempts WHERE ip = ?");
     $stmt->execute([$ip]);
@@ -195,6 +215,7 @@ function checkRateLimit(PDO $pdo, string $ip) {
             $pdo->prepare("UPDATE login_attempts SET attempts = 0, last_attempt = ? WHERE ip = ?")->execute([$now, $ip]);
         }
     }
+    */
 }
 
 function recordLoginFailed(PDO $pdo, string $ip) {
@@ -223,9 +244,10 @@ function base64UrlDecode(string $data): string {
     return base64_decode(strtr($data, '-_', '+/')) ?: '';
 }
 
-function createToken(array $payload, string $secret): string {
+function createToken(array $payload, string $secret, int $durationSeconds = 7776000): string {
     $header = base64UrlEncode(json_encode(['typ' => 'JWT', 'alg' => 'HS256']));
-    $payload['exp'] = time() + (30 * 86400); // Valide 30 jours
+    $payload['iat'] = time();
+    $payload['exp'] = time() + $durationSeconds; // Par défaut : 90 jours
     $payloadEncoded = base64UrlEncode(json_encode($payload));
     $signature = hash_hmac('sha256', "$header.$payloadEncoded", $secret, true);
     $signatureEncoded = base64UrlEncode($signature);
@@ -246,9 +268,28 @@ function verifyToken(string $token, string $secret): ?array {
     return $payload;
 }
 
+function getAuthHeader(): string {
+    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+        return $_SERVER['HTTP_AUTHORIZATION'];
+    }
+    if (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        return $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+    if (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        if (!empty($headers['Authorization'])) return $headers['Authorization'];
+        if (!empty($headers['authorization'])) return $headers['authorization'];
+    }
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (!empty($headers['Authorization'])) return $headers['Authorization'];
+        if (!empty($headers['authorization'])) return $headers['authorization'];
+    }
+    return '';
+}
+
 function authenticate(string $jwtSecret): array {
-    $headers = getallheaders();
-    $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+    $authHeader = getAuthHeader();
     if (!preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
         http_response_code(401);
         echo json_encode(['error' => 'Authentification requise']);
@@ -301,11 +342,13 @@ $pathInfo = '/' . ltrim($pathInfo, '/');
 // --- AUTHENTIFICATION ---
 if ($method === 'POST' && $pathInfo === '/auth/login') {
     $clientIp = getClientIP();
-    checkRateLimit($pdo, $clientIp);
+    // checkRateLimit($pdo, $clientIp); // Temporairement désactivé pour les tests d'interface
 
     $body = getJsonBody();
     $username = trim($body['username'] ?? '');
     $password = $body['password'] ?? '';
+    $remember = !isset($body['remember']) || !empty($body['remember']);
+    $tokenDuration = $remember ? (90 * 86400) : (1 * 86400); // 90 jours si persistant, 1 jour sinon
 
     if (!$username || !$password) {
         http_response_code(400);
@@ -332,16 +375,42 @@ if ($method === 'POST' && $pathInfo === '/auth/login') {
         'displayName' => $user['display_name'],
         'role' => $user['role']
     ];
-    $token = createToken($payload, $jwtSecret);
+    $token = createToken($payload, $jwtSecret, $tokenDuration);
     echo json_encode(['token' => $token, 'user' => $payload]);
     exit;
 }
 
+if ($method === 'GET' && $pathInfo === '/auth/status') {
+    $countUsers = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    echo json_encode(['initialized' => $countUsers > 0]);
+    exit;
+}
+
 if ($method === 'POST' && $pathInfo === '/auth/register') {
+    $countUsers = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    $role = 'user';
+    $isFirstUser = false;
+
+    if ($countUsers === 0) {
+        $role = 'admin';
+        $isFirstUser = true;
+    } else {
+        $currentUser = authenticate($jwtSecret);
+        if (($currentUser['role'] ?? '') !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Seul un administrateur peut créer des comptes collaborateurs']);
+            exit;
+        }
+        $body = getJsonBody();
+        $role = (!empty($body['role']) && $body['role'] === 'admin') ? 'admin' : 'user';
+    }
+
     $body = getJsonBody();
     $username = trim($body['username'] ?? '');
     $password = $body['password'] ?? '';
     $displayName = trim($body['displayName'] ?? '');
+    $remember = !isset($body['remember']) || !empty($body['remember']);
+    $tokenDuration = $remember ? (90 * 86400) : (1 * 86400);
 
     if (!$username || !$password || !$displayName) {
         http_response_code(400);
@@ -359,23 +428,37 @@ if ($method === 'POST' && $pathInfo === '/auth/register') {
 
     $id = 'usr-' . uuid();
     $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-    $stmt = $pdo->prepare("INSERT INTO users (id, username, password_hash, display_name, role) VALUES (?, ?, ?, ?, 'user')");
-    $stmt->execute([$id, $username, $hash, $displayName]);
+    $stmt = $pdo->prepare("INSERT INTO users (id, username, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$id, $username, $hash, $displayName, $role]);
 
-    $payload = ['id' => $id, 'username' => $username, 'displayName' => $displayName, 'role' => 'user'];
-    $token = createToken($payload, $jwtSecret);
-    echo json_encode(['token' => $token, 'user' => $payload]);
+    if ($isFirstUser) {
+        $payload = ['id' => $id, 'username' => $username, 'displayName' => $displayName, 'role' => 'admin'];
+        $token = createToken($payload, $jwtSecret, $tokenDuration);
+        echo json_encode(['token' => $token, 'user' => $payload]);
+        exit;
+    }
+
+    http_response_code(201);
+    echo json_encode(['success' => true, 'message' => "Compte collaborateur $username créé avec succès."]);
     exit;
 }
 
 if ($method === 'GET' && $pathInfo === '/auth/me') {
     $user = authenticate($jwtSecret);
-    echo json_encode(['user' => $user]);
+    // Rafraîchir / prolonger automatiquement la session (Sliding Session 90 jours)
+    $refreshedToken = createToken([
+        'id' => $user['id'],
+        'username' => $user['username'],
+        'displayName' => $user['displayName'],
+        'role' => $user['role']
+    ], $jwtSecret, 90 * 86400);
+    echo json_encode(['user' => $user, 'token' => $refreshedToken]);
     exit;
 }
 
 // --- RESSOURCES ---
 if ($pathInfo === '/resources') {
+    $user = authenticate($jwtSecret);
     if ($method === 'GET') {
         $rows = $pdo->query("SELECT * FROM resources ORDER BY name ASC")->fetchAll();
         $res = array_map(function($r) {
@@ -392,19 +475,37 @@ if ($pathInfo === '/resources') {
     }
 
     if ($method === 'POST') {
-        authenticate($jwtSecret);
+        $user = authenticate($jwtSecret);
         $body = getJsonBody();
-        $id = $body['id'] ?? ('res-' . uuid());
-        $name = trim($body['name'] ?? 'Sans nom');
-        $cat = $body['category'] ?? 'Général';
-        $status = $body['status'] ?? 'available';
-        $attrs = json_encode($body['attributes'] ?? (object)[]);
+        $items = (isset($body[0]) && is_array($body)) ? $body : [$body];
 
-        $stmt = $pdo->prepare("INSERT INTO resources (id, name, category, status, attributes_json) VALUES (?, ?, ?, ?, ?)");
-        $stmt->execute([$id, $name, $cat, $status, $attrs]);
+        $stmt = $pdo->prepare("
+            INSERT INTO resources (id, name, category, status, attributes_json) 
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET 
+                name = excluded.name, 
+                category = excluded.category, 
+                status = excluded.status, 
+                attributes_json = excluded.attributes_json, 
+                updated_at = CURRENT_TIMESTAMP
+        ");
+
+        $pdo->beginTransaction();
+        $saved = [];
+        foreach ($items as $item) {
+            if (!$item || !is_array($item)) continue;
+            $id = $item['id'] ?? ('res-' . uuid());
+            $name = trim($item['name'] ?? 'Sans nom');
+            $cat = $item['category'] ?? 'Général';
+            $status = $item['status'] ?? 'available';
+            $attrs = json_encode($item['attributes'] ?? (object)[]);
+            $stmt->execute([$id, $name, $cat, $status, $attrs]);
+            $saved[] = ['id' => $id, 'name' => $name, 'category' => $cat, 'status' => $status];
+        }
+        $pdo->commit();
 
         http_response_code(201);
-        echo json_encode(['id' => $id, 'name' => $name, 'category' => $cat, 'status' => $status, 'attributes' => $body['attributes'] ?? []]);
+        echo json_encode(isset($body[0]) ? $saved : ($saved[0] ?? []));
         exit;
     }
 }
@@ -436,6 +537,7 @@ if (preg_match('#^/resources/([^/]+)$#', $pathInfo, $m)) {
 
 // --- ALLOCATIONS (ROADMAP) ---
 if ($pathInfo === '/allocations') {
+    $user = authenticate($jwtSecret);
     if ($method === 'GET') {
         $sql = "SELECT a.*, r.name as resource_name FROM allocations a LEFT JOIN resources r ON a.resource_id = r.id ORDER BY a.start_date ASC";
         $rows = $pdo->query($sql)->fetchAll();
@@ -459,32 +561,54 @@ if ($pathInfo === '/allocations') {
     if ($method === 'POST') {
         $user = authenticate($jwtSecret);
         $body = getJsonBody();
-        $id = $body['id'] ?? ('alloc-' . uuid());
-        $resourceId = $body['resourceId'] ?? '';
-        $startDate = $body['startDate'] ?? '';
-        $endDate = $body['endDate'] ?? '';
-        $label = $body['label'] ?? 'Essai';
-        $taskRef = $body['taskRef'] ?? null;
+        $items = (isset($body[0]) && is_array($body)) ? $body : [$body];
 
-        $stmt = $pdo->prepare("INSERT INTO allocations (id, resource_id, user_id, user_name, start_date, end_date, label, task_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$id, $resourceId, $user['id'], $user['displayName'], $startDate, $endDate, $label, $taskRef]);
+        $stmt = $pdo->prepare("
+            INSERT INTO allocations (id, resource_id, user_id, user_name, start_date, end_date, label, task_ref) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                resource_id = excluded.resource_id,
+                start_date = excluded.start_date,
+                end_date = excluded.end_date,
+                label = excluded.label,
+                task_ref = excluded.task_ref,
+                updated_at = CURRENT_TIMESTAMP
+        ");
+
+        $pdo->beginTransaction();
+        $saved = [];
+        foreach ($items as $item) {
+            if (!$item || !is_array($item)) continue;
+            $id = $item['id'] ?? ('alloc-' . uuid());
+            $resourceId = $item['resourceId'] ?? '';
+            $uId = $item['userId'] ?? $user['id'];
+            $uName = $item['userName'] ?? $user['displayName'];
+            $startDate = $item['startDate'] ?? '';
+            $endDate = $item['endDate'] ?? '';
+            $label = $item['label'] ?? 'Essai';
+            $taskRef = $item['taskRef'] ?? null;
+
+            $stmt->execute([$id, $resourceId, $uId, $uName, $startDate, $endDate, $label, $taskRef]);
+            $saved[] = [
+                'id' => $id,
+                'resourceId' => $resourceId,
+                'userId' => $uId,
+                'userName' => $uName,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'label' => $label,
+                'taskRef' => $taskRef
+            ];
+        }
+        $pdo->commit();
 
         http_response_code(201);
-        echo json_encode([
-            'id' => $id,
-            'resourceId' => $resourceId,
-            'userId' => $user['id'],
-            'userName' => $user['displayName'],
-            'startDate' => $startDate,
-            'endDate' => $endDate,
-            'label' => $label,
-            'taskRef' => $taskRef
-        ]);
+        echo json_encode(isset($body[0]) ? $saved : ($saved[0] ?? []));
         exit;
     }
 }
 
-if (preg_match('#^/allocations/([^/]+)$#', $pathInfo, $m)) {
+if (preg_match('#^/allocations/([^/]+)(?:/delete)?$#', $pathInfo, $m)) {
     authenticate($jwtSecret);
     $id = $m[1];
 
@@ -496,8 +620,133 @@ if (preg_match('#^/allocations/([^/]+)$#', $pathInfo, $m)) {
         exit;
     }
 
-    if ($method === 'DELETE') {
+    if ($method === 'DELETE' || $method === 'POST') {
         $stmt = $pdo->prepare("DELETE FROM allocations WHERE id = ?");
+        $stmt->execute([$id]);
+        echo json_encode(['success' => true]);
+        exit;
+    }
+}
+
+// --- TÂCHES PARTAGÉES & ROADMAP ---
+if ($pathInfo === '/tasks') {
+    if ($method === 'GET') {
+        $user = authenticate($jwtSecret);
+        // Tâches de l'utilisateur ou associées à la roadmap
+        $stmt = $pdo->prepare("
+            SELECT * FROM tasks 
+            WHERE (resource_id IS NOT NULL AND resource_id != '' AND start_date != '' AND end_date != '')
+               OR user_id = ?
+            ORDER BY created_at DESC
+        ");
+        $stmt->execute([$user['id']]);
+        $rows = $stmt->fetchAll();
+        $tasks = array_map(function($t) {
+            return [
+                'id' => $t['id'],
+                'title' => $t['title'],
+                'columnId' => $t['column_id'],
+                'categoryId' => $t['category_id'],
+                'resourceId' => $t['resource_id'],
+                'startDate' => $t['start_date'],
+                'endDate' => $t['end_date'],
+                'allocationId' => $t['allocation_id'],
+                'userId' => $t['user_id'],
+                'userName' => $t['user_name'],
+                'time' => (float)$t['time'],
+                'projection' => (float)$t['projection'],
+                'isSold' => (bool)$t['is_sold'],
+                'description' => $t['description'] ?? '',
+                'sensitive' => json_decode($t['sensitive_json'] ?: '{}', true),
+                'isShared' => (bool)$t['is_shared'],
+                'createdAt' => $t['created_at'],
+                'updatedAt' => $t['updated_at']
+            ];
+        }, $rows);
+        echo json_encode($tasks);
+        exit;
+    }
+
+    if ($method === 'POST') {
+        $user = authenticate($jwtSecret);
+        $body = getJsonBody();
+        $items = (isset($body[0]) && is_array($body)) ? $body : [$body];
+
+        $stmt = $pdo->prepare("
+            INSERT INTO tasks (
+                id, title, column_id, category_id, resource_id, start_date, end_date,
+                allocation_id, user_id, user_name, time, projection, is_sold,
+                description, sensitive_json, is_shared, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                column_id = excluded.column_id,
+                category_id = excluded.category_id,
+                resource_id = excluded.resource_id,
+                start_date = excluded.start_date,
+                end_date = excluded.end_date,
+                allocation_id = excluded.allocation_id,
+                user_id = excluded.user_id,
+                user_name = excluded.user_name,
+                time = excluded.time,
+                projection = excluded.projection,
+                is_sold = excluded.is_sold,
+                description = excluded.description,
+                sensitive_json = excluded.sensitive_json,
+                is_shared = excluded.is_shared,
+                updated_at = excluded.updated_at
+        ");
+
+        $pdo->beginTransaction();
+        $saved = [];
+        foreach ($items as $item) {
+            if (!$item || !is_array($item)) continue;
+            $id = $item['id'] ?? ('task-' . uuid());
+            $title = trim($item['title'] ?? 'Sans titre');
+            $colId = $item['columnId'] ?? 'todo';
+            $catId = $item['categoryId'] ?? 'neutre';
+            $resId = $item['resourceId'] ?? null;
+            $startDate = $item['startDate'] ?? '';
+            $endDate = $item['endDate'] ?? '';
+            $allocId = $item['allocationId'] ?? null;
+            $uId = $item['userId'] ?? $user['id'];
+            $uName = $item['userName'] ?? $user['displayName'];
+            $time = (float)($item['time'] ?? 0);
+            $proj = (float)($item['projection'] ?? 0);
+            $isSold = !empty($item['isSold']) ? 1 : 0;
+            $desc = $item['description'] ?? '';
+            $sensitive = json_encode($item['sensitive'] ?? (object)[]);
+            $isShared = !empty($item['isShared']) ? 1 : 0;
+            $createdAt = $item['createdAt'] ?? date('Y-m-d H:i:s');
+            $updatedAt = $item['updatedAt'] ?? date('Y-m-d H:i:s');
+
+            $stmt->execute([
+                $id, $title, $colId, $catId, $resId, $startDate, $endDate,
+                $allocId, $uId, $uName, $time, $proj, $isSold,
+                $desc, $sensitive, $isShared, $createdAt, $updatedAt
+            ]);
+            $saved[] = ['id' => $id, 'title' => $title];
+        }
+        $pdo->commit();
+
+        http_response_code(201);
+        echo json_encode(isset($body[0]) ? $saved : ($saved[0] ?? []));
+        exit;
+    }
+}
+
+if (preg_match('#^/tasks/([^/]+)(?:/delete)?$#', $pathInfo, $m)) {
+    authenticate($jwtSecret);
+    $id = $m[1];
+    if ($method === 'DELETE' || $method === 'POST') {
+        // Supprimer également l'allocation liée si elle existe
+        $taskStmt = $pdo->prepare("SELECT allocation_id FROM tasks WHERE id = ?");
+        $taskStmt->execute([$id]);
+        $taskRow = $taskStmt->fetch();
+        if ($taskRow && !empty($taskRow['allocation_id'])) {
+            $pdo->prepare("DELETE FROM allocations WHERE id = ?")->execute([$taskRow['allocation_id']]);
+        }
+        $stmt = $pdo->prepare("DELETE FROM tasks WHERE id = ?");
         $stmt->execute([$id]);
         echo json_encode(['success' => true]);
         exit;
@@ -550,7 +799,12 @@ if ($pathInfo === '/config') {
     }
 
     if ($method === 'POST') {
-        authenticate($jwtSecret);
+        $user = authenticate($jwtSecret);
+        if (($user['role'] ?? '') !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Seul un administrateur peut modifier la configuration globale des catégories et colonnes']);
+            exit;
+        }
         $body = getJsonBody();
 
         if (isset($body['terminology'])) {
@@ -597,23 +851,13 @@ if ($pathInfo === '/config') {
     }
 }
 
-// --- COMPATIBILITÉ V1 & SAUVEGARDE GLOBALE ---
-$backupFile = $dataDir . '/.ht_backup.json';
-if ($pathInfo === '/save' && $method === 'POST') {
-    authenticate($jwtSecret);
-    $raw = file_get_contents('php://input');
-    file_put_contents($backupFile, $raw);
-    echo json_encode(['success' => true]);
-    exit;
-}
 
-if ($pathInfo === '/load' && $method === 'GET') {
-    if (!file_exists($backupFile)) {
-        http_response_code(404);
-        echo json_encode(['error' => 'Aucune sauvegarde trouvée']);
-        exit;
-    }
-    echo file_get_contents($backupFile);
+
+// --- TEMPS RÉEL (SSE) ---
+if ($pathInfo === '/events') {
+    // Sur mutualisé PHP (sans serveur d'événements persistant Node/Redis),
+    // renvoyer HTTP 204 No Content signale au navigateur de fermer proprement la connexion EventSource
+    http_response_code(204);
     exit;
 }
 

@@ -86,6 +86,62 @@
     gap: 12px;
     flex-shrink: 0;
   }
+
+  @media (max-width: 768px) {
+    max-height: 88vh;
+    max-height: 88dvh;
+    border-radius: 20px 20px 0 0 !important;
+    animation: slideUpMobile 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
+
+    .modal-header {
+      padding: 16px 18px 12px;
+      position: relative;
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: #cbd5e1;
+      }
+
+      h3 {
+        font-size: 1.05rem;
+      }
+    }
+
+    .modal-body {
+      padding: 16px 18px;
+      gap: 14px;
+      max-height: calc(88vh - 120px);
+    }
+
+    .modal-footer {
+      padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+      background: #f8fafc;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+}
+
+@keyframes slideUpMobile {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 // Formulaires dans la modale
@@ -121,6 +177,11 @@
     background: white;
     transition: border-color $transition-fast;
 
+    @media (max-width: 768px) {
+      font-size: 16px !important; // Prévention stricte de l'auto-zoom d'iOS Safari sur iPhone SE
+      padding: 9px 12px;
+    }
+
     &:focus {
       outline: none;
       border-color: $color-primary;
@@ -142,6 +203,11 @@
 .form-row {
   display: flex;
   gap: 12px;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    gap: 8px;
+  }
 
   .form-group {
     flex: 1;

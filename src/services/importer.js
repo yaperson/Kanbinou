@@ -152,30 +152,60 @@ export function normalizeImportedData(raw) {
     terminology: raw.terminology || null
   };
 
-  // 1. Extraction des Ressources / Produits
-  const rawProducts = raw.products || [];
-  if (Array.isArray(rawProducts)) {
-    rawProducts.forEach(p => {
-      if (typeof p === 'string') {
+  // 1. Extraction des Ressources / Produits (support de raw.resources, raw.products, tableaux ou dictionnaires)
+  const rawList = [];
+  const sources = [
+    raw.resources,
+    raw.products,
+    raw.data && raw.data.resources,
+    raw.data && raw.data.products
+  ];
+
+  sources.forEach(src => {
+    if (!src) return;
+    if (Array.isArray(src)) {
+      rawList.push(...src);
+    } else if (typeof src === 'object') {
+      Object.entries(src).forEach(([key, val]) => {
+        if (typeof val === 'string') {
+          rawList.push({ id: key, name: val });
+        } else if (val && typeof val === 'object') {
+          rawList.push({ id: val.id || key, ...val });
+        }
+      });
+    }
+  });
+
+  const seenIds = new Set();
+  rawList.forEach(p => {
+    if (!p) return;
+    if (typeof p === 'string' && p.trim()) {
+      const clean = p.trim();
+      const id = `res-${crypto.randomUUID()}`;
+      result.resources.push({
+        id,
+        name: clean,
+        category: 'Général',
+        status: 'available',
+        attributes: {},
+        updatedAt: new Date().toISOString()
+      });
+    } else if (typeof p === 'object') {
+      const id = p.id || `res-${crypto.randomUUID()}`;
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        const name = p.name || p.title || p.label || id;
         result.resources.push({
-          id: `res-${crypto.randomUUID()}`,
-          name: p,
-          category: 'Général',
-          status: 'available',
-          updatedAt: new Date().toISOString()
-        });
-      } else if (p && p.name) {
-        result.resources.push({
-          id: p.id || `res-${crypto.randomUUID()}`,
-          name: p.name,
+          id,
+          name,
           category: p.category || 'Général',
           status: p.status || 'available',
           attributes: p.attributes || {},
           updatedAt: p.updatedAt || new Date().toISOString()
         });
       }
-    });
-  }
+    }
+  });
 
   // 2. Extraction des Tâches selon les différentes variantes :
   
@@ -252,11 +282,18 @@ function addTaskToResult(t, defaultColId, result) {
     if (existingByName) {
       resourceId = existingByName.id;
     } else {
+      const isTechId = resourceId.startsWith('res-') || resourceId.startsWith('prod-') || /^[0-9a-f-]{30,}$/i.test(resourceId);
+      const resName = isTechId 
+        ? (t.productName || t.resourceName || t.product || 'Produit')
+        : resourceId;
+      const resId = isTechId ? resourceId : `res-${crypto.randomUUID()}`;
+
       const newRes = {
-        id: `res-${crypto.randomUUID()}`,
-        name: resourceId.startsWith('prod-') ? resourceId : resourceId,
+        id: resId,
+        name: resName,
         category: 'Général',
         status: 'available',
+        attributes: {},
         updatedAt: new Date().toISOString()
       };
       result.resources.push(newRes);

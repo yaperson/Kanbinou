@@ -3,10 +3,10 @@
     <form class="modal-card modal-large" v-if="taskForm" @submit.prevent="save">
       <!-- En-tête -->
       <div class="modal-header">
-        <h3>Détails de la tâche</h3>
+        <h3>{{ isNewTask ? 'Nouvelle tâche' : 'Détails de la tâche' }}</h3>
         <div class="modal-header-actions">
-          <button class="btn btn-sm" type="button" @click="printDetails" title="Imprimer la fiche">Imprimer</button>
-          <button class="btn btn-sm" type="button" @click="downloadICS" title="Exporter au format calendrier iCal">.ICS</button>
+          <button v-if="!isNewTask" class="btn btn-sm" type="button" @click="printDetails" title="Imprimer la fiche">Imprimer</button>
+          <button v-if="!isNewTask" class="btn btn-sm" type="button" @click="downloadICS" title="Exporter au format calendrier iCal">.ICS</button>
           <button class="close-btn" type="button" @click="close">&times;</button>
         </div>
       </div>
@@ -155,9 +155,10 @@
 
       <!-- Pied de page -->
       <div class="modal-footer">
-        <button type="button" class="btn btn-danger" @click="confirmDelete">
+        <button v-if="!isNewTask" type="button" class="btn btn-danger" @click="confirmDelete">
           Supprimer
         </button>
+        <span v-else></span>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="btn" @click="close">Annuler</button>
           <button type="submit" class="btn btn-primary">Enregistrer</button>
@@ -174,9 +175,31 @@ import { useAppStore } from '../stores/app.js';
 const store = useAppStore();
 
 const taskForm = ref(null);
+const isNewTask = computed(() => store.selectedTaskId === 'new');
 
 watch(() => store.selectedTaskId, (id) => {
-  if (id) {
+  if (id === 'new') {
+    taskForm.value = {
+      id: `task-${crypto.randomUUID()}`,
+      title: '',
+      columnId: store.newTaskDefaultColumnId || store.columns[0]?.id || 'todo',
+      categoryId: store.categories[0]?.id || 'neutre',
+      isShared: false,
+      resourceId: null,
+      startDate: '',
+      endDate: '',
+      allocationId: null,
+      userId: store.user ? store.user.id : null,
+      userName: store.user ? (store.user.displayName || store.user.username) : null,
+      time: 0,
+      projection: 0,
+      isSold: false,
+      description: '',
+      sensitive: { address: '', email: '', phone: '', notes: '' },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  } else if (id) {
     const t = store.tasks.find(x => x.id === id);
     if (t) {
       taskForm.value = JSON.parse(JSON.stringify(t));

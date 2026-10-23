@@ -1,65 +1,96 @@
 <template>
-  <div 
-    class="kanban-view"
-    :class="store.layoutMode === 'nested3' ? 'layout-nested3' : 'layout-flat4'"
-    :style="customGridStyle"
-  >
-    <!-- Mode 3 colonnes plein écran avec En cours / En attente imbriqués (Classique Kanbinou) -->
-    <template v-if="store.layoutMode === 'nested3'">
-      <!-- Volet 1 : Gauche (Simple ou Imbriqué si multi-colonnes) -->
-      <KanbanNestedColumn 
-        v-if="cleanLeftIds.length > 1"
-        :column-ids="cleanLeftIds"
-      />
-      <KanbanColumn 
-        v-else-if="colLeft" 
-        :key="colLeft.id" 
-        :column="colLeft" 
-      />
+  <div class="kanban-board-container">
+    <!-- Pager / Indicateur de colonnes sur Mobile pour défilement et repérage instantané -->
+    <div class="mobile-column-pills" v-if="store.isMobile">
+      <button 
+        v-for="(col, index) in mobileColumns" 
+        :key="col.id"
+        class="mobile-col-pill"
+        :class="{ 'is-active': activeMobileColIndex === index }"
+        @click="scrollToMobileCol(index)"
+      >
+        <span class="pill-dot" :style="{ backgroundColor: col.color || '#64748b' }"></span>
+        <span class="pill-title">{{ col.title }}</span>
+        <span class="pill-count">{{ getColTaskCount(col.id) }}</span>
+      </button>
+    </div>
 
-      <!-- Volet 2 : Colonne centrale imbriquée (2 ou plusieurs colonnes) -->
-      <KanbanNestedColumn 
-        :column-ids="cleanCenterIds"
-      />
+    <!-- Tableau Kanban -->
+    <div 
+      ref="boardContainer"
+      class="kanban-view"
+      :class="store.layoutMode === 'nested3' ? 'layout-nested3' : 'layout-flat4'"
+      :style="customGridStyle"
+      @scroll="handleBoardScroll"
+    >
+      <!-- Sur Mobile : affichage plein hauteur de toutes les colonnes swipeables -->
+      <template v-if="store.isMobile">
+        <KanbanColumn 
+          v-for="col in mobileColumns" 
+          :key="col.id" 
+          :column="col" 
+        />
+      </template>
 
-      <!-- Volet 3 : Droite (Simple ou Imbriqué si multi-colonnes) -->
-      <KanbanNestedColumn 
-        v-if="cleanRightIds.length > 1"
-        :column-ids="cleanRightIds"
-      />
-      <KanbanColumn 
-        v-else-if="colRight" 
-        :key="colRight.id" 
-        :column="colRight" 
-      />
+      <!-- Sur Ordinateur : respect strict de la disposition PC (nested3 ou flat4) -->
+      <template v-else-if="store.layoutMode === 'nested3'">
+        <!-- Volet 1 : Gauche (Simple ou Imbriqué si multi-colonnes) -->
+        <KanbanNestedColumn 
+          v-if="cleanLeftIds.length > 1"
+          :column-ids="cleanLeftIds"
+        />
+        <KanbanColumn 
+          v-else-if="colLeft" 
+          :key="colLeft.id" 
+          :column="colLeft" 
+        />
 
-      <!-- Colonnes personnalisées supplémentaires si présentes -->
-      <KanbanColumn 
-        v-for="col in extraCols" 
-        :key="col.id" 
-        :column="col" 
-      />
-    </template>
+        <!-- Volet 2 : Colonne centrale imbriquée (2 ou plusieurs colonnes) -->
+        <KanbanNestedColumn 
+          :column-ids="cleanCenterIds"
+        />
 
-    <!-- Mode 4 colonnes étendues (Flat) -->
-    <template v-else>
-      <KanbanColumn 
-        v-for="column in visibleColumns" 
-        :key="column.id" 
-        :column="column" 
-      />
-    </template>
+        <!-- Volet 3 : Droite (Simple ou Imbriqué si multi-colonnes) -->
+        <KanbanNestedColumn 
+          v-if="cleanRightIds.length > 1"
+          :column-ids="cleanRightIds"
+        />
+        <KanbanColumn 
+          v-else-if="colRight" 
+          :key="colRight.id" 
+          :column="colRight" 
+        />
 
+        <!-- Colonnes personnalisées supplémentaires si présentes -->
+        <KanbanColumn 
+          v-for="col in extraCols" 
+          :key="col.id" 
+          :column="col" 
+        />
+      </template>
+
+      <!-- Mode 4 colonnes étendues (Flat) sur Ordinateur -->
+      <template v-else>
+        <KanbanColumn 
+          v-for="column in visibleColumns" 
+          :key="column.id" 
+          :column="column" 
+        />
+      </template>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import KanbanColumn from './KanbanColumn.vue';
 import KanbanNestedColumn from './KanbanNestedColumn.vue';
 
 const store = useAppStore();
+const boardContainer = ref(null);
+const activeMobileColIndex = ref(0);
+let scrollTimeout = null;
 
 // Colonnes visibles uniques (sans doublon)
 const visibleColumns = computed(() => {
@@ -70,6 +101,37 @@ const visibleColumns = computed(() => {
     return true;
   });
 });
+
+// Colonnes pour l'affichage mobile
+const mobileColumns = computed(() => visibleColumns.value);
+
+function getColTaskCount(colId) {
+  return store.filteredTasks.filter(t => t.columnId === colId).length;
+}
+
+function handleBoardScroll(e) {
+  if (!store.isMobile) return;
+  if (scrollTimeout) clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(() => {
+    const el = e.target;
+    if (!el) return;
+    const scrollLeft = el.scrollLeft;
+    const colEl = el.querySelector('.kanban-column');
+    const colWidth = colEl ? colEl.offsetWidth : 300;
+    const index = Math.round(scrollLeft / (colWidth + 12));
+    activeMobileColIndex.value = Math.max(0, Math.min(mobileColumns.value.length - 1, index));
+  }, 40);
+}
+
+function scrollToMobileCol(index) {
+  activeMobileColIndex.value = index;
+  const board = boardContainer.value;
+  if (!board) return;
+  const colElements = board.querySelectorAll('.kanban-column');
+  if (colElements[index]) {
+    colElements[index].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  }
+}
 
 // Volet Gauche : ID uniques
 const cleanLeftIds = computed(() => {
@@ -149,7 +211,7 @@ const extraCols = computed(() => {
 });
 
 const customGridStyle = computed(() => {
-  if (store.layoutMode === 'nested3' && extraCols.value.length > 0) {
+  if (store.layoutMode === 'nested3' && extraCols.value.length > 0 && !store.isMobile) {
     return {
       gridTemplateColumns: `repeat(${3 + extraCols.value.length}, minmax(280px, 1fr))`,
       overflowX: 'auto'
@@ -157,9 +219,14 @@ const customGridStyle = computed(() => {
   }
   return {};
 });
-
-function openAddColumn() {
-  store.settingsTab = 'columns';
-  store.activeModal = 'settings';
-}
 </script>
+
+<style scoped>
+.kanban-board-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+</style>

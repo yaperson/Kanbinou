@@ -5,9 +5,59 @@
 import { defineStore } from 'pinia';
 import { db, initializeLocalDB, toPlainObject } from '../services/db.js';
 import { api } from '../services/api.js';
+import { encryptData, decryptData } from '../services/crypto.js';
+
+// Utilitaires de gestion des suppressions pour garantir la cohérence multi-postes
+function getDeletedTaskIds() {
+  try {
+    return JSON.parse(localStorage.getItem('kanbinou_deleted_task_ids') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function markTaskAsDeleted(id) {
+  if (!id) return;
+  try {
+    const list = getDeletedTaskIds();
+    if (!list.includes(id)) {
+      list.push(id);
+      localStorage.setItem('kanbinou_deleted_task_ids', JSON.stringify(list.slice(-300)));
+    }
+  } catch (e) {}
+}
+
+function unmarkTaskAsDeleted(id) {
+  if (!id) return;
+  try {
+    const list = getDeletedTaskIds();
+    const filtered = list.filter(x => x !== id);
+    localStorage.setItem('kanbinou_deleted_task_ids', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
+function getDeletedAllocIds() {
+  try {
+    return JSON.parse(localStorage.getItem('kanbinou_deleted_alloc_ids') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function markAllocAsDeleted(id) {
+  if (!id) return;
+  try {
+    const list = getDeletedAllocIds();
+    if (!list.includes(id)) {
+      list.push(id);
+      localStorage.setItem('kanbinou_deleted_alloc_ids', JSON.stringify(list.slice(-300)));
+    }
+  } catch (e) {}
+}
 
 export const useAppStore = defineStore('app', {
   state: () => ({
+    teamKey: localStorage.getItem('kanbinou_team_key') || '',
     tasks: [],
     columns: [],
     categories: [],
@@ -27,6 +77,7 @@ export const useAppStore = defineStore('app', {
     activeModal: null, // null | 'task' | 'resources' | 'sync' | 'export' | 'settings'
     settingsTab: 'layout', // 'layout' | 'terminology' | 'categories'
     selectedTaskId: null,
+    newTaskDefaultColumnId: null,
     layoutMode: 'nested3', // 'nested3' | 'flat4'
     nestedConfig: {
       colLeftId: 'todo',
@@ -44,14 +95,28 @@ export const useAppStore = defineStore('app', {
     },
     isOnline: navigator.onLine,
     isSyncing: false,
-    user: null,
-    currentRoadmapMonth: new Date()
+    user: (() => {
+      try {
+        const stored = localStorage.getItem('kanbinou_user') || sessionStorage.getItem('kanbinou_user');
+        return stored ? JSON.parse(stored) : null;
+      } catch (e) {
+        return null;
+      }
+    })(),
+    currentRoadmapMonth: new Date(),
+    isMobile: typeof window !== 'undefined' ? (window.innerWidth <= 768 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) : false
   }),
 
   getters: {
-    // Tâches filtrées par la recherche, la catégorie active et triées
+    // Tâches appartenant à l'utilisateur courant (ou locales si déconnecté)
+    myTasks(state) {
+      if (!state.user) return state.tasks;
+      return state.tasks.filter(t => !t.userId || t.userId === state.user.id);
+    },
+
+    // Tâches filtrées par la recherche, la catégorie active et triées (pour le Kanban personnel)
     filteredTasks(state) {
-      let result = state.tasks;
+      let result = this.myTasks;
 
       if (state.activeCategoryFilter) {
         result = result.filter(t => t.categoryId === state.activeCategoryFilter);
@@ -80,25 +145,27 @@ export const useAppStore = defineStore('app', {
       return result;
     },
 
-    // Total d'heures par colonne
+    // Total d'heures par colonne (calculé sur les tâches visibles de l'utilisateur)
     columnTimeTotals(state) {
       const totals = {};
+      const visible = this.myTasks;
       state.columns.forEach(col => {
-        const tasksInCol = state.tasks.filter(t => t.columnId === col.id);
+        const tasksInCol = visible.filter(t => t.columnId === col.id);
         const sum = tasksInCol.reduce((acc, t) => acc + (parseFloat(t.time) || 0), 0);
         totals[col.id] = sum.toFixed(1);
       });
       return totals;
     },
 
-    // Répartition pour la barre de catégories
+    // Répartition pour la barre de catégories (calculé sur les tâches visibles de l'utilisateur)
     categoryStats(state) {
-      const total = state.tasks.length;
+      const myTasksList = this.myTasks;
+      const total = myTasksList.length;
       if (total === 0) return [];
 
       const counts = {};
       state.categories.forEach(c => { counts[c.id] = 0; });
-      state.tasks.forEach(t => {
+      myTasksList.forEach(t => {
         if (counts[t.categoryId] !== undefined) {
           counts[t.categoryId]++;
         } else {
@@ -148,7 +215,13 @@ export const useAppStore = defineStore('app', {
       await initializeLocalDB();
       await this.loadLocalData();
 
-      // 2. Écouter les événements réseau (en ligne / hors ligne)
+      // 2. Écouter les événements réseau (en ligne / hors ligne) et responsive
+      const updateMobile = () => {
+        this.isMobile = typeof window !== 'undefined' && (window.innerWidth <= 768 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+      };
+      updateMobile();
+      window.addEventListener('resize', updateMobile);
+
       window.addEventListener('online', () => {
         this.isOnline = true;
         this.syncWithServer();
@@ -162,12 +235,21 @@ export const useAppStore = defineStore('app', {
         try {
           const res = await api.getMe();
           if (res && res.user) {
-            this.user = res.user;
+            const isRemembered = api.isRemembered();
+            this.setUser(res.user, isRemembered);
+            if (res.token) {
+              api.setToken(res.token, isRemembered); // Session glissante : renouvellement transparent
+            }
             this.syncWithServer();
           }
         } catch (err) {
-          console.warn('[Auth] Session expirée ou inaccessible');
-          api.setToken(null);
+          // On ne déconnecte QUE si le token a été expressément rejeté par le serveur avec une erreur 401
+          if (err && err.status === 401) {
+            console.warn('[Auth] Session expirée ou token invalidé');
+            this.logout();
+          } else {
+            console.warn('[Auth] Serveur injoignable pour le moment, session locale maintenue en continu :', err?.message);
+          }
         }
       }
 
@@ -177,27 +259,105 @@ export const useAppStore = defineStore('app', {
       }
     },
 
+    setUser(user, remember = true) {
+      this.user = user;
+      if (user) {
+        const json = JSON.stringify(user);
+        if (remember) {
+          localStorage.setItem('kanbinou_user', json);
+          sessionStorage.removeItem('kanbinou_user');
+        } else {
+          sessionStorage.setItem('kanbinou_user', json);
+          localStorage.removeItem('kanbinou_user');
+        }
+      } else {
+        localStorage.removeItem('kanbinou_user');
+        sessionStorage.removeItem('kanbinou_user');
+      }
+    },
+
+    logout() {
+      api.setToken(null);
+      this.setUser(null);
+    },
+
+    setTeamKey(key) {
+      this.teamKey = (key || '').trim();
+      if (this.teamKey) {
+        localStorage.setItem('kanbinou_team_key', this.teamKey);
+      } else {
+        localStorage.removeItem('kanbinou_team_key');
+      }
+    },
+
+    // Filtrage à la source & Chiffrement E2EE pour le serveur
+    async prepareTaskForServer(task) {
+      const plain = toPlainObject(task);
+      const hasSensitive = plain.sensitive && (
+        (plain.sensitive.address && plain.sensitive.address.trim()) ||
+        (plain.sensitive.email && plain.sensitive.email.trim()) ||
+        (plain.sensitive.phone && plain.sensitive.phone.trim()) ||
+        (plain.sensitive.notes && plain.sensitive.notes.trim())
+      );
+
+      if (hasSensitive) {
+        if (this.teamKey) {
+          try {
+            plain.sensitive = await encryptData(plain.sensitive, this.teamKey);
+          } catch (err) {
+            console.warn('[E2EE] Échec chiffrement, vidage du bloc sensible par précaution :', err);
+            plain.sensitive = {};
+          }
+        } else {
+          // Filtrage à la source : en l'absence de clé secrète d'équipe, NE JAMAIS exposer les coordonnées en clair
+          plain.sensitive = {};
+        }
+      } else if (plain.sensitive && plain.sensitive.cipher) {
+        // Déjà chiffré
+      } else {
+        plain.sensitive = {};
+      }
+      return plain;
+    },
+
+    // Déchiffrement transparent à la réception du serveur
+    async processTaskFromServer(serverTask, localTasksMap) {
+      const isEncrypted = serverTask.sensitive && serverTask.sensitive.cipher && serverTask.sensitive.salt && serverTask.sensitive.iv;
+      if (isEncrypted) {
+        if (this.teamKey) {
+          try {
+            serverTask.sensitive = await decryptData(serverTask.sensitive, this.teamKey);
+          } catch (err) {
+            console.warn('[E2EE] Clé d\'équipe différente ou invalide pour cette tâche :', err);
+            const localCopy = localTasksMap ? localTasksMap.get(serverTask.id) : null;
+            if (localCopy && localCopy.sensitive && !localCopy.sensitive.cipher) {
+              serverTask.sensitive = localCopy.sensitive;
+            }
+          }
+        } else {
+          // Sans clé d'équipe, préserver la version déchiffrée locale si l'utilisateur en est l'auteur
+          const localCopy = localTasksMap ? localTasksMap.get(serverTask.id) : null;
+          if (localCopy && localCopy.sensitive && !localCopy.sensitive.cipher) {
+            serverTask.sensitive = localCopy.sensitive;
+          } else {
+            serverTask.sensitive = { address: '', email: '', phone: '', notes: '' };
+          }
+        }
+      }
+      return serverTask;
+    },
+
     // Charger les données depuis IndexedDB et synchroniser avec localStorage
     async loadLocalData() {
       let rawCols = await db.columns.orderBy('order').toArray();
-      // Vérifier si localStorage contient des colonnes
+      // Utiliser localStorage uniquement en secours si IndexedDB est vide (hors-ligne initiale)
       try {
         const storedCols = localStorage.getItem('kanbinou_columns');
-        if (storedCols) {
+        if (storedCols && (!rawCols || rawCols.length === 0)) {
           const parsedCols = JSON.parse(storedCols);
           if (Array.isArray(parsedCols) && parsedCols.length > 0) {
-            if (!rawCols || rawCols.length === 0) {
-              rawCols = parsedCols;
-              await db.columns.bulkPut(parsedCols);
-            } else {
-              for (const sc of parsedCols) {
-                const inDb = rawCols.find(c => c.id === sc.id);
-                if (inDb && sc.color && inDb.color !== sc.color) {
-                  inDb.color = sc.color;
-                  await db.columns.update(inDb.id, { color: sc.color });
-                }
-              }
-            }
+            rawCols = parsedCols;
+            await db.columns.bulkPut(parsedCols);
           }
         }
       } catch (e) {
@@ -215,25 +375,14 @@ export const useAppStore = defineStore('app', {
       } catch (e) {}
 
       let rawCats = await db.categories.orderBy('order').toArray();
-      // Vérifier et synchroniser les couleurs sauvegardées en localStorage
+      // Utiliser localStorage uniquement en secours si IndexedDB est vide
       try {
         const storedCats = localStorage.getItem('kanbinou_categories');
-        if (storedCats) {
+        if (storedCats && (!rawCats || rawCats.length === 0)) {
           const parsedCats = JSON.parse(storedCats);
           if (Array.isArray(parsedCats) && parsedCats.length > 0) {
-            if (!rawCats || rawCats.length === 0) {
-              rawCats = parsedCats;
-              await db.categories.bulkPut(parsedCats);
-            } else {
-              // Si une couleur a été enregistrée en localStorage, l'appliquer en priorité
-              for (const sc of parsedCats) {
-                const inDb = rawCats.find(c => c.id === sc.id);
-                if (inDb && sc.color && inDb.color !== sc.color) {
-                  inDb.color = sc.color;
-                  await db.categories.update(inDb.id, { color: sc.color });
-                }
-              }
-            }
+            rawCats = parsedCats;
+            await db.categories.bulkPut(parsedCats);
           }
         }
       } catch (e) {
@@ -333,6 +482,8 @@ export const useAppStore = defineStore('app', {
         startDate: '',
         endDate: '',
         allocationId: null,
+        userId: this.user ? this.user.id : null,
+        userName: this.user ? (this.user.displayName || this.user.username) : null,
         time: 0,
         projection: 0,
         isSold: false,
@@ -353,6 +504,10 @@ export const useAppStore = defineStore('app', {
 
     async saveTask(task) {
       task.updatedAt = new Date().toISOString();
+      if (!task.userId && this.user) {
+        task.userId = this.user.id;
+        task.userName = this.user.displayName || this.user.username;
+      }
 
       // Gestion de la réservation / essai sur la roadmap
       const category = this.categories.find(c => c.id === task.categoryId);
@@ -366,12 +521,13 @@ export const useAppStore = defineStore('app', {
         const allocation = {
           id: task.allocationId,
           resourceId: task.resourceId,
-          userId: this.user ? this.user.id : 'local-user',
-          userName: this.user ? this.user.displayName : 'Moi',
+          userId: task.userId || (this.user ? this.user.id : 'local-user'),
+          userName: task.userName || (this.user ? (this.user.displayName || this.user.username) : 'Moi'),
           startDate: task.startDate,
           endDate: task.endDate,
           label: task.title,
           taskId: task.id,
+          taskRef: task.id,
           updatedAt: new Date().toISOString()
         };
 
@@ -398,20 +554,50 @@ export const useAppStore = defineStore('app', {
       const index = this.tasks.findIndex(t => t.id === task.id);
       if (index !== -1) {
         this.tasks[index] = { ...task };
+      } else {
+        this.tasks.push({ ...task });
       }
+
+      unmarkTaskAsDeleted(task.id);
+
+      if (this.isOnline && this.user && (task.resourceId || task.allocationId)) {
+        try {
+          const payload = await this.prepareTaskForServer(task);
+          await api.createTask(payload);
+          task._synced = true;
+          await db.tasks.put(toPlainObject(task));
+        } catch (err) {
+          console.warn('[Sync] Échec envoi tâche roadmap sécurisée :', err);
+        }
+      }
+
       await this.loadLocalData();
     },
 
     async deleteTask(taskId) {
       const task = this.tasks.find(t => t.id === taskId);
-      if (task && task.allocationId) {
-        await db.allocations.delete(task.allocationId);
-        if (this.isOnline && this.user) {
-          api.deleteAllocation(task.allocationId).catch(() => {});
-        }
+      const allocId = task ? task.allocationId : null;
+
+      // Marquer définitivement comme supprimé pour empêcher toute résurrection
+      markTaskAsDeleted(taskId);
+      if (allocId) {
+        markAllocAsDeleted(allocId);
+        await db.allocations.delete(allocId);
       }
+
       await db.tasks.delete(taskId);
       this.tasks = this.tasks.filter(t => t.id !== taskId);
+
+      if (this.isOnline && this.user) {
+        if (allocId) {
+          api.deleteAllocation(allocId).catch(() => {});
+        }
+        try {
+          await api.deleteTask(taskId);
+        } catch (err) {
+          console.warn('[Sync] Échec suppression tâche serveur :', err);
+        }
+      }
     },
 
     async moveTask(taskId, targetColumnId) {
@@ -420,6 +606,14 @@ export const useAppStore = defineStore('app', {
         task.columnId = targetColumnId;
         task.updatedAt = new Date().toISOString();
         await db.tasks.put(toPlainObject(task));
+        if (this.isOnline && this.user && (task.resourceId || task.allocationId)) {
+          try {
+            const payload = await this.prepareTaskForServer(task);
+            api.createTask(payload).catch(() => {});
+          } catch (err) {
+            console.warn('[Sync] Échec déplacement tâche roadmap sécurisée :', err);
+          }
+        }
       }
     },
 
@@ -476,23 +670,263 @@ export const useAppStore = defineStore('app', {
       try {
         console.log('[Sync] Synchronisation avec le cloud...');
 
-        // 1. Récupérer les ressources partagées du serveur
-        const serverResources = await api.getResources();
-        if (Array.isArray(serverResources)) {
-          await db.resources.bulkPut(serverResources);
+        // 1. Assigner automatiquement les tâches locales créées ou importées hors connexion
+        if (this.user) {
+          const localTasks = await db.tasks.toArray();
+          for (const t of localTasks) {
+            if (!t.userId) {
+              t.userId = this.user.id;
+              t.userName = this.user.displayName || this.user.username;
+              await db.tasks.put(toPlainObject(t));
+            }
+          }
+          this.tasks = await db.tasks.toArray();
         }
 
-        // 2. Récupérer les créneaux de roadmap (allocations)
-        const serverAllocations = await api.getAllocations();
-        if (Array.isArray(serverAllocations)) {
-          await db.allocations.bulkPut(serverAllocations);
+        // 2. Ressources : Préservation absolue des données locales et synchronisation cloud
+        let localResources = await db.resources.toArray();
+        if (localResources.length === 0 && this.resources.length > 0) {
+          await db.resources.bulkPut(toPlainObject(this.resources));
+          localResources = await db.resources.toArray();
         }
 
-        // 3. Récupérer les configurations communes
+        let serverResources = [];
+        try {
+          const res = await api.getResources();
+          if (Array.isArray(res)) serverResources = res;
+        } catch (err) {
+          console.warn('[Sync] Impossible de récupérer les ressources du serveur :', err);
+        }
+
+        // Détecter les ressources locales à envoyer au serveur
+        const missingResources = localResources.filter(
+          lr => lr && lr.id && !serverResources.some(sr => sr.id === lr.id)
+        );
+
+        if (missingResources.length > 0) {
+          try {
+            await api.createResource(toPlainObject(missingResources));
+            serverResources.push(...missingResources);
+          } catch (batchErr) {
+            console.warn('[Sync] Push groupé ressources échoué, tentative unitaire :', batchErr);
+            for (const item of missingResources) {
+              try {
+                await api.createResource(toPlainObject(item));
+                if (!serverResources.some(sr => sr.id === item.id)) {
+                  serverResources.push(item);
+                }
+              } catch (singleErr) {
+                console.warn('[Sync] Échec unitaire ressource :', item.name, singleErr);
+              }
+            }
+          }
+        }
+
+        // Fusionner dans IndexedDB (SANS JAMAIS EFFACER LES DONNÉES LOCALES)
+        if (serverResources.length > 0) {
+          await db.resources.bulkPut(toPlainObject(serverResources));
+        }
+        this.resources = await db.resources.toArray();
+
+        // 3. Allocations : Créer les réservations pour les tâches éligibles et synchroniser la Roadmap
+        let localAllocations = await db.allocations.toArray();
+        const currentTasks = await db.tasks.toArray();
+
+        for (const task of currentTasks) {
+          const category = this.categories.find(c => c.id === task.categoryId);
+          const isEligible = category ? category.isRoadmapEligible : (task.resourceId && task.startDate && task.endDate);
+          if (isEligible && task.resourceId && task.startDate && task.endDate) {
+            let alloc = localAllocations.find(a => a.id === task.allocationId || a.taskRef === task.id || a.taskId === task.id);
+            if (!alloc) {
+              alloc = {
+                id: task.allocationId || `alloc-${crypto.randomUUID()}`,
+                resourceId: task.resourceId,
+                userId: task.userId || (this.user ? this.user.id : 'local-user'),
+                userName: task.userName || (this.user ? (this.user.displayName || this.user.username) : 'Moi'),
+                startDate: task.startDate,
+                endDate: task.endDate,
+                label: task.title,
+                taskId: task.id,
+                taskRef: task.id,
+                updatedAt: new Date().toISOString()
+              };
+              task.allocationId = alloc.id;
+              await db.tasks.put(toPlainObject(task));
+              await db.allocations.put(toPlainObject(alloc));
+              localAllocations.push(alloc);
+            }
+          }
+        }
+
+        // Réconciliation des allocations supprimées en attente
+        const pendingDeletedAllocs = getDeletedAllocIds();
+        for (const delId of pendingDeletedAllocs) {
+          await api.deleteAllocation(delId).catch(() => {});
+          await db.allocations.delete(delId);
+        }
+
+        let serverAllocations = [];
+        try {
+          const aRes = await api.getAllocations();
+          if (Array.isArray(aRes)) {
+            serverAllocations = aRes.filter(a => a && a.id && !pendingDeletedAllocs.includes(a.id));
+          }
+        } catch (err) {
+          console.warn('[Sync] Impossible de récupérer les allocations serveur :', err);
+        }
+
+        localAllocations = (await db.allocations.toArray()).filter(
+          a => a && a.id && !pendingDeletedAllocs.includes(a.id)
+        );
+        const serverAllocIds = new Set(serverAllocations.map(sa => sa.id));
+
+        // Supprimer en local les allocations supprimées sur le serveur par un autre compte
+        for (const la of localAllocations) {
+          if (la._synced && !serverAllocIds.has(la.id)) {
+            await db.allocations.delete(la.id);
+          }
+        }
+
+        // Pousser UNIQUEMENT les nouvelles allocations locales créées hors connexion
+        const missingAllocs = localAllocations.filter(
+          la => !la._synced && !serverAllocIds.has(la.id)
+        );
+
+        if (missingAllocs.length > 0) {
+          try {
+            await api.createAllocation(toPlainObject(missingAllocs));
+            for (const item of missingAllocs) {
+              item._synced = true;
+              await db.allocations.put(toPlainObject(item));
+            }
+          } catch (batchErr) {
+            console.warn('[Sync] Push groupé allocations échoué, tentative unitaire :', batchErr);
+            for (const item of missingAllocs) {
+              try {
+                await api.createAllocation(toPlainObject(item));
+                item._synced = true;
+                await db.allocations.put(toPlainObject(item));
+              } catch (singleErr) {
+                console.warn('[Sync] Échec unitaire allocation :', item.label, singleErr);
+              }
+            }
+          }
+        }
+
+        if (serverAllocations.length > 0) {
+          const allocsToStore = serverAllocations.map(sa => ({ ...sa, _synced: true }));
+          await db.allocations.bulkPut(toPlainObject(allocsToStore));
+        }
+        this.allocations = await db.allocations.toArray();
+
+        // 4. Synchronisation des Tâches (Exclusivement les tâches de la roadmap)
+        // Réconciliation des tâches supprimées en attente
+        const pendingDeletedTasks = getDeletedTaskIds();
+        for (const delId of pendingDeletedTasks) {
+          await api.deleteTask(delId).catch(() => {});
+          await db.tasks.delete(delId);
+        }
+
+        const allLocalTasks = (await db.tasks.toArray()).filter(
+          t => t && t.id && !pendingDeletedTasks.includes(t.id)
+        );
+        const localRoadmapTasks = allLocalTasks.filter(t => 
+          t && (t.resourceId || t.allocationId)
+        );
+
+        let serverTasks = [];
+        try {
+          const tRes = await api.getTasks();
+          if (Array.isArray(tRes)) {
+            serverTasks = tRes.filter(st => st && st.id && !pendingDeletedTasks.includes(st.id));
+          }
+        } catch (err) {
+          console.warn('[Sync] Impossible de récupérer les tâches serveur :', err);
+        }
+
+        const serverTaskIdSet = new Set(serverTasks.map(st => st.id));
+
+        // Supprimer en local les tâches roadmap supprimées sur le serveur par un autre utilisateur
+        for (const lt of localRoadmapTasks) {
+          if (lt._synced && !serverTaskIdSet.has(lt.id)) {
+            await db.tasks.delete(lt.id);
+            if (lt.allocationId) {
+              await db.allocations.delete(lt.allocationId);
+            }
+          }
+        }
+
+        // Déchiffrer les tâches de la roadmap reçues du serveur
+        const localTasksMap = new Map(allLocalTasks.map(t => [t.id, t]));
+        const processedServerTasks = [];
+        for (const st of serverTasks) {
+          const processed = await this.processTaskFromServer(st, localTasksMap);
+          processed._synced = true;
+          processedServerTasks.push(processed);
+        }
+
+        // Pousser UNIQUEMENT les tâches roadmap locales non encore synchronisées (!lt._synced)
+        const missingTasksOnServer = localRoadmapTasks.filter(
+          lt => !lt._synced && !serverTaskIdSet.has(lt.id)
+        );
+
+        if (missingTasksOnServer.length > 0) {
+          const payloadToPush = [];
+          for (const item of missingTasksOnServer) {
+            payloadToPush.push(await this.prepareTaskForServer(item));
+          }
+
+          try {
+            await api.createTask(toPlainObject(payloadToPush));
+            for (const item of missingTasksOnServer) {
+              item._synced = true;
+              await db.tasks.put(toPlainObject(item));
+            }
+          } catch (batchErr) {
+            console.warn('[Sync] Push groupé tâches échoué, tentative unitaire :', batchErr);
+            for (const item of payloadToPush) {
+              try {
+                await api.createTask(toPlainObject(item));
+                const orig = missingTasksOnServer.find(m => m.id === item.id);
+                if (orig) {
+                  orig._synced = true;
+                  await db.tasks.put(toPlainObject(orig));
+                }
+              } catch (singleErr) {
+                console.warn('[Sync] Échec unitaire tâche :', item.title, singleErr);
+              }
+            }
+          }
+        }
+
+        if (processedServerTasks.length > 0) {
+          await db.tasks.bulkPut(toPlainObject(processedServerTasks));
+        }
+        this.tasks = await db.tasks.toArray();
+
+        // 5. Configurations communes (catégories, colonnes, terminologie)
         const config = await api.getConfig();
         if (config) {
-          if (config.columns) await db.columns.bulkPut(config.columns);
-          if (config.categories) await db.categories.bulkPut(config.categories);
+          if (Array.isArray(config.columns) && config.columns.length > 0) {
+            await db.columns.bulkPut(config.columns);
+            this.columns = await db.columns.orderBy('order').toArray();
+            try {
+              localStorage.setItem('kanbinou_columns', JSON.stringify(toPlainObject(this.columns)));
+            } catch (e) {}
+          } else if (this.user.role === 'admin' && this.columns.length > 0) {
+            await api.saveConfig({ columns: toPlainObject(this.columns) }).catch(() => {});
+          }
+
+          if (Array.isArray(config.categories) && config.categories.length > 0) {
+            await db.categories.bulkPut(config.categories);
+            this.categories = await db.categories.orderBy('order').toArray();
+            try {
+              localStorage.setItem('kanbinou_categories', JSON.stringify(toPlainObject(this.categories)));
+            } catch (e) {}
+          } else if (this.user.role === 'admin' && this.categories.length > 0) {
+            await api.saveConfig({ categories: toPlainObject(this.categories) }).catch(() => {});
+          }
+
           if (config.terminology) {
             await db.meta.put({ key: 'terminology', value: config.terminology });
             this.terminology = config.terminology;
@@ -615,6 +1049,10 @@ export const useAppStore = defineStore('app', {
 
     // --- Actions Catégories / Tags ---
     async createCategory(name, color = '#60a5fa', isRoadmapEligible = false) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut créer ou modifier les étiquettes communes.');
+        return null;
+      }
       if (!name || !name.trim()) return null;
       const cleanName = name.trim();
       const slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -640,6 +1078,10 @@ export const useAppStore = defineStore('app', {
     },
 
     async updateCategory(id, updates) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut modifier les étiquettes communes.');
+        return;
+      }
       const cat = this.categories.find(c => c.id === id);
       if (!cat) return;
       Object.assign(cat, updates);
@@ -653,6 +1095,10 @@ export const useAppStore = defineStore('app', {
     },
 
     async deleteCategory(id) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut supprimer des étiquettes communes.');
+        return;
+      }
       if (id === 'neutre') {
         alert('Le tag "Neutre" sert de catégorie par défaut et ne peut être supprimé.');
         return;
@@ -675,6 +1121,10 @@ export const useAppStore = defineStore('app', {
 
     // Réinitialiser les couleurs de catégories aux teintes historiques Kanbinou
     async resetCategoryColors() {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut réinitialiser les étiquettes.');
+        return;
+      }
       const defaults = [
         { id: 'commercial', name: 'Commercial', color: '#c5e1a5', isRoadmapEligible: false, requiresResource: false, order: 1 },
         { id: 'essais', name: 'Essais', color: '#ffcc80', isRoadmapEligible: true, requiresResource: true, order: 2 },
@@ -695,6 +1145,10 @@ export const useAppStore = defineStore('app', {
 
     // --- Actions Colonnes ---
     async createColumn(title, color = '#64748b') {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut créer ou modifier les colonnes.');
+        return null;
+      }
       if (!title || !title.trim()) return null;
       const cleanTitle = title.trim();
       const id = `col-${Date.now().toString(36)}`;
@@ -718,6 +1172,10 @@ export const useAppStore = defineStore('app', {
     },
 
     async updateColumn(id, updates) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut modifier les colonnes.');
+        return;
+      }
       const col = this.columns.find(c => c.id === id);
       if (!col) return;
       Object.assign(col, updates);
@@ -731,6 +1189,10 @@ export const useAppStore = defineStore('app', {
     },
 
     async deleteColumn(id) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut supprimer des colonnes.');
+        return;
+      }
       if (['todo', 'doing', 'waiting', 'done'].includes(id)) {
         alert('Les colonnes fondamentales (À faire, En cours, En attente, Terminé) ne peuvent pas être supprimées.');
         return;
@@ -752,6 +1214,10 @@ export const useAppStore = defineStore('app', {
     },
 
     async resetDefaultColumns() {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut réinitialiser les colonnes.');
+        return;
+      }
       const defaults = [
         { id: 'todo', title: 'À faire', order: 1, isVisible: true, color: '#0284c7' },
         { id: 'doing', title: 'En cours', order: 2, isVisible: true, color: '#f59e0b' },
@@ -770,6 +1236,10 @@ export const useAppStore = defineStore('app', {
     },
 
     async reorderColumns(newOrderList) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut réorganiser les colonnes.');
+        return;
+      }
       for (let i = 0; i < newOrderList.length; i++) {
         newOrderList[i].order = i + 1;
         await db.columns.put(toPlainObject(newOrderList[i]));
@@ -786,12 +1256,20 @@ export const useAppStore = defineStore('app', {
     // Modal navigation
     openTaskModal(taskId) {
       this.selectedTaskId = taskId;
+      this.newTaskDefaultColumnId = null;
+      this.activeModal = 'task';
+    },
+
+    openNewTaskModal(columnId = 'todo') {
+      this.selectedTaskId = 'new';
+      this.newTaskDefaultColumnId = columnId;
       this.activeModal = 'task';
     },
 
     closeModal() {
       this.activeModal = null;
       this.selectedTaskId = null;
+      this.newTaskDefaultColumnId = null;
     }
   }
 });

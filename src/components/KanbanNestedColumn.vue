@@ -149,6 +149,7 @@ function toggleCollapse(colId) {
 const dragOverColId = ref(null);
 
 function onDragOver(colId, e) {
+  if (store.isMobile) return;
   e.dataTransfer.dropEffect = 'move';
   dragOverColId.value = colId;
 }
@@ -160,8 +161,9 @@ function onDragLeave(colId) {
 }
 
 function onDrop(colId, e) {
+  if (store.isMobile) return;
   dragOverColId.value = null;
-  const taskId = e.dataTransfer.getData('text/plain');
+  const taskId = e.dataTransfer?.getData('text/plain');
   if (taskId && colId) {
     store.moveTask(taskId, colId);
   }

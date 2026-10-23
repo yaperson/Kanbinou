@@ -10,9 +10,26 @@ const Database = require('better-sqlite3');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
+const crypto = require('crypto');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'kanbinou-super-secret-key-2026';
+
+// Gestion robuste du secret JWT : persistance automatique dans un fichier local protégé
+const SECRET_FILE = path.join(__dirname, '.jwt_secret');
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  if (fs.existsSync(SECRET_FILE)) {
+    JWT_SECRET = fs.readFileSync(SECRET_FILE, 'utf8').trim();
+  } else {
+    JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    try {
+      fs.writeFileSync(SECRET_FILE, JWT_SECRET, { mode: 0o600 });
+    } catch (err) {
+      console.warn('Impossible de persister .jwt_secret :', err.message);
+    }
+  }
+}
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -76,6 +93,27 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    column_id TEXT NOT NULL,
+    category_id TEXT DEFAULT 'neutre',
+    resource_id TEXT,
+    start_date TEXT,
+    end_date TEXT,
+    allocation_id TEXT,
+    user_id TEXT,
+    user_name TEXT,
+    time REAL DEFAULT 0,
+    projection REAL DEFAULT 0,
+    is_sold INTEGER DEFAULT 0,
+    description TEXT DEFAULT '',
+    sensitive_json TEXT DEFAULT '{}',
+    is_shared INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS shared_tasks (
     id TEXT PRIMARY KEY,
     column_id TEXT NOT NULL,
@@ -94,16 +132,9 @@ db.exec(`
   );
 `);
 
-// Données initiales si la base est vide
-const countUsers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
-if (countUsers === 0) {
-  console.log('⚡ Initialisation du compte administrateur initial (admin / admin)...');
-  const hash = bcrypt.hashSync('admin', 10);
-  db.prepare(`
-    INSERT INTO users (id, username, password_hash, display_name, role)
-    VALUES ('usr-admin', 'admin', ?, 'Administrateur', 'admin')
-  `).run(hash);
-
+// Données initiales pour les colonnes, catégories et terminologie si la base est neuve
+const countCols = db.prepare('SELECT COUNT(*) as c FROM columns').get().c;
+if (countCols === 0) {
   // Colonnes par défaut
   const insertCol = db.prepare('INSERT OR IGNORE INTO columns (id, title, color, order_idx, is_visible) VALUES (?, ?, ?, ?, 1)');
   insertCol.run('todo', 'À faire', '#0284c7', 1);
@@ -178,7 +209,7 @@ function authMiddleware(req, res, next) {
 }
 
 app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, remember = true } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Identifiants requis' });
 
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
@@ -186,10 +217,11 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect' });
   }
 
+  const expiresIn = remember ? '90d' : '1d';
   const token = jwt.sign(
     { id: user.id, username: user.username, displayName: user.display_name, role: user.role },
     JWT_SECRET,
-    { expiresIn: '30d' }
+    { expiresIn }
   );
 
   res.json({
@@ -198,8 +230,40 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
+app.get('/api/auth/status', (req, res) => {
+  const countUsers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+  res.json({ initialized: countUsers > 0 });
+});
+
 app.post('/api/auth/register', (req, res) => {
-  const { username, password, displayName } = req.body;
+  const countUsers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+  let role = 'user';
+  let isFirstUser = false;
+
+  if (countUsers === 0) {
+    // Premier utilisateur du système : devient obligatoirement l'Administrateur principal
+    role = 'admin';
+    isFirstUser = true;
+  } else {
+    // Si la base contient déjà des utilisateurs, seul un Administrateur authentifié peut créer des comptes
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Seul un administrateur connecté peut créer de nouveaux comptes collaborateurs' });
+    }
+    const token = authHeader.split(' ')[1];
+    let currentUser;
+    try {
+      currentUser = jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Session invalide ou expirée' });
+    }
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès refusé : seul un administrateur peut créer des comptes' });
+    }
+    role = (req.body.role === 'admin') ? 'admin' : 'user';
+  }
+
+  const { username, password, displayName, remember = true } = req.body;
   if (!username || !password || !displayName) {
     return res.status(400).json({ error: 'Tous les champs sont requis' });
   }
@@ -211,21 +275,31 @@ app.post('/api/auth/register', (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   db.prepare(`
     INSERT INTO users (id, username, password_hash, display_name, role)
-    VALUES (?, ?, ?, ?, 'user')
-  `).run(id, username, hash, displayName);
+    VALUES (?, ?, ?, ?, ?)
+  `).run(id, username, hash, displayName, role);
 
-  const token = jwt.sign({ id, username, displayName, role: 'user' }, JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, user: { id, username, displayName, role: 'user' } });
+  if (isFirstUser) {
+    const expiresIn = remember ? '90d' : '1d';
+    const token = jwt.sign({ id, username, displayName, role }, JWT_SECRET, { expiresIn });
+    return res.json({ token, user: { id, username, displayName, role } });
+  }
+
+  res.status(201).json({ success: true, message: `Compte collaborateur ${username} créé avec succès.` });
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user });
+  const token = jwt.sign(
+    { id: req.user.id, username: req.user.username, displayName: req.user.displayName, role: req.user.role },
+    JWT_SECRET,
+    { expiresIn: '90d' }
+  );
+  res.json({ user: req.user, token });
 });
 
 // -----------------------------------------------------------------------------
 // CRUD RESSOURCES (PRODUITS / MATÉRIEL / PARC)
 // -----------------------------------------------------------------------------
-app.get('/api/resources', (req, res) => {
+app.get('/api/resources', authMiddleware, (req, res) => {
   const resources = db.prepare('SELECT * FROM resources ORDER BY name ASC').all();
   res.json(resources.map(r => ({
     ...r,
@@ -234,16 +308,35 @@ app.get('/api/resources', (req, res) => {
 });
 
 app.post('/api/resources', authMiddleware, (req, res) => {
-  const { id, name, category, status, attributes } = req.body;
-  const newId = id || `res-${crypto.randomUUID()}`;
-  db.prepare(`
+  const items = Array.isArray(req.body) ? req.body : [req.body];
+  const insertStmt = db.prepare(`
     INSERT INTO resources (id, name, category, status, attributes_json)
     VALUES (?, ?, ?, ?, ?)
-  `).run(newId, name, category || 'Général', status || 'available', JSON.stringify(attributes || {}));
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      category = excluded.category,
+      status = excluded.status,
+      attributes_json = excluded.attributes_json,
+      updated_at = CURRENT_TIMESTAMP
+  `);
 
-  const resource = { id: newId, name, category, status, attributes };
-  broadcastEvent('RESOURCE_CREATED', resource);
-  res.status(201).json(resource);
+  const saved = [];
+  const insertMany = db.transaction((rows) => {
+    for (const item of rows) {
+      if (!item) continue;
+      const newId = item.id || `res-${crypto.randomUUID()}`;
+      const name = (item.name || '').trim() || 'Sans nom';
+      const category = item.category || 'Général';
+      const status = item.status || 'available';
+      const attrs = JSON.stringify(item.attributes || {});
+      insertStmt.run(newId, name, category, status, attrs);
+      saved.push({ id: newId, name, category, status, attributes: item.attributes || {} });
+    }
+  });
+
+  insertMany(items);
+  saved.forEach(r => broadcastEvent('RESOURCE_CREATED', r));
+  res.status(201).json(Array.isArray(req.body) ? saved : (saved[0] || {}));
 });
 
 app.put('/api/resources/:id', authMiddleware, (req, res) => {
@@ -268,7 +361,7 @@ app.delete('/api/resources/:id', authMiddleware, (req, res) => {
 // -----------------------------------------------------------------------------
 // CRUD ALLOCATIONS (CRÉNEAUX ROADMAP / ESSAIS)
 // -----------------------------------------------------------------------------
-app.get('/api/allocations', (req, res) => {
+app.get('/api/allocations', authMiddleware, (req, res) => {
   const allocations = db.prepare(`
     SELECT a.*, r.name as resource_name 
     FROM allocations a 
@@ -289,26 +382,48 @@ app.get('/api/allocations', (req, res) => {
 });
 
 app.post('/api/allocations', authMiddleware, (req, res) => {
-  const { id, resourceId, startDate, endDate, label, taskRef } = req.body;
-  const newId = id || `alloc-${crypto.randomUUID()}`;
-  db.prepare(`
+  const items = Array.isArray(req.body) ? req.body : [req.body];
+  const insertStmt = db.prepare(`
     INSERT INTO allocations (id, resource_id, user_id, user_name, start_date, end_date, label, task_ref)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(newId, resourceId, req.user.id, req.user.displayName, startDate, endDate, label || 'Essai', taskRef || null);
+    ON CONFLICT(id) DO UPDATE SET
+      resource_id = excluded.resource_id,
+      start_date = excluded.start_date,
+      end_date = excluded.end_date,
+      label = excluded.label,
+      task_ref = excluded.task_ref,
+      updated_at = CURRENT_TIMESTAMP
+  `);
 
-  const allocation = {
-    id: newId,
-    resourceId,
-    userId: req.user.id,
-    userName: req.user.displayName,
-    startDate,
-    endDate,
-    label,
-    taskRef
-  };
+  const saved = [];
+  const insertMany = db.transaction((rows) => {
+    for (const item of rows) {
+      if (!item) continue;
+      const newId = item.id || `alloc-${crypto.randomUUID()}`;
+      const resourceId = item.resourceId || '';
+      const uId = item.userId || req.user.id;
+      const uName = item.userName || req.user.displayName;
+      const startDate = item.startDate || '';
+      const endDate = item.endDate || '';
+      const label = item.label || 'Essai';
+      const taskRef = item.taskRef || null;
+      insertStmt.run(newId, resourceId, uId, uName, startDate, endDate, label, taskRef);
+      saved.push({
+        id: newId,
+        resourceId,
+        userId: uId,
+        userName: uName,
+        startDate,
+        endDate,
+        label,
+        taskRef
+      });
+    }
+  });
 
-  broadcastEvent('ALLOCATION_CREATED', allocation);
-  res.status(201).json(allocation);
+  insertMany(items);
+  saved.forEach(a => broadcastEvent('ALLOCATION_CREATED', a));
+  res.status(201).json(Array.isArray(req.body) ? saved : (saved[0] || {}));
 });
 
 app.put('/api/allocations/:id', authMiddleware, (req, res) => {
@@ -324,12 +439,120 @@ app.put('/api/allocations/:id', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
-app.delete('/api/allocations/:id', authMiddleware, (req, res) => {
+const deleteAllocationHandler = (req, res) => {
   const { id } = req.params;
   db.prepare('DELETE FROM allocations WHERE id = ?').run(id);
   broadcastEvent('ALLOCATION_DELETED', { id });
   res.json({ success: true });
+};
+app.delete('/api/allocations/:id', authMiddleware, deleteAllocationHandler);
+app.post('/api/allocations/:id/delete', authMiddleware, deleteAllocationHandler);
+
+// -----------------------------------------------------------------------------
+// CRUD TÂCHES PARTAGÉES & ROADMAP
+// -----------------------------------------------------------------------------
+app.get('/api/tasks', authMiddleware, (req, res) => {
+  const rows = db.prepare(`
+    SELECT * FROM tasks 
+    WHERE (resource_id IS NOT NULL AND resource_id != '' AND start_date != '' AND end_date != '')
+       OR user_id = ?
+    ORDER BY created_at DESC
+  `).all(req.user.id);
+
+  res.json(rows.map(t => ({
+    id: t.id,
+    title: t.title,
+    columnId: t.column_id,
+    categoryId: t.category_id,
+    resourceId: t.resource_id,
+    startDate: t.start_date,
+    endDate: t.end_date,
+    allocationId: t.allocation_id,
+    userId: t.user_id,
+    userName: t.user_name,
+    time: t.time,
+    projection: t.projection,
+    isSold: !!t.is_sold,
+    description: t.description || '',
+    sensitive: JSON.parse(t.sensitive_json || '{}'),
+    isShared: !!t.is_shared,
+    createdAt: t.created_at,
+    updatedAt: t.updated_at
+  })));
 });
+
+app.post('/api/tasks', authMiddleware, (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : [req.body];
+  const insertStmt = db.prepare(`
+    INSERT INTO tasks (
+      id, title, column_id, category_id, resource_id, start_date, end_date,
+      allocation_id, user_id, user_name, time, projection, is_sold,
+      description, sensitive_json, is_shared, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      column_id = excluded.column_id,
+      category_id = excluded.category_id,
+      resource_id = excluded.resource_id,
+      start_date = excluded.start_date,
+      end_date = excluded.end_date,
+      allocation_id = excluded.allocation_id,
+      user_id = excluded.user_id,
+      user_name = excluded.user_name,
+      time = excluded.time,
+      projection = excluded.projection,
+      is_sold = excluded.is_sold,
+      description = excluded.description,
+      sensitive_json = excluded.sensitive_json,
+      is_shared = excluded.is_shared,
+      updated_at = excluded.updated_at
+  `);
+
+  const saved = [];
+  const insertMany = db.transaction((rows) => {
+    for (const item of rows) {
+      if (!item) continue;
+      const id = item.id || `task-${crypto.randomUUID()}`;
+      const title = (item.title || '').trim() || 'Sans titre';
+      const colId = item.columnId || 'todo';
+      const catId = item.categoryId || 'neutre';
+      const resId = item.resourceId || null;
+      const startDate = item.startDate || '';
+      const endDate = item.endDate || '';
+      const allocId = item.allocationId || null;
+      const uId = item.userId || req.user.id;
+      const uName = item.userName || req.user.displayName;
+      const time = item.time || 0;
+      const proj = item.projection || 0;
+      const isSold = item.isSold ? 1 : 0;
+      const desc = item.description || '';
+      const sensitive = JSON.stringify(item.sensitive || {});
+      const isShared = item.isShared ? 1 : 0;
+      const createdAt = item.createdAt || new Date().toISOString();
+      const updatedAt = item.updatedAt || new Date().toISOString();
+
+      insertStmt.run(id, title, colId, catId, resId, startDate, endDate, allocId, uId, uName, time, proj, isSold, desc, sensitive, isShared, createdAt, updatedAt);
+      saved.push({ id, title });
+    }
+  });
+
+  insertMany(items);
+  res.status(201).json(Array.isArray(req.body) ? saved : (saved[0] || {}));
+});
+
+const deleteTaskHandler = (req, res) => {
+  const { id } = req.params;
+  const task = db.prepare('SELECT allocation_id FROM tasks WHERE id = ?').get(id);
+  if (task && task.allocation_id) {
+    db.prepare('DELETE FROM allocations WHERE id = ?').run(task.allocation_id);
+    broadcastEvent('ALLOCATION_DELETED', { id: task.allocation_id });
+  }
+  db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  broadcastEvent('TASK_DELETED', { id });
+  res.json({ success: true });
+};
+app.delete('/api/tasks/:id', authMiddleware, deleteTaskHandler);
+app.post('/api/tasks/:id/delete', authMiddleware, deleteTaskHandler);
 
 // -----------------------------------------------------------------------------
 // CONFIGURATION DE L'ESPACE (COLONNES, CATÉGORIES, TERMINOLOGIE)
@@ -395,27 +618,7 @@ app.post('/api/config', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
-// -----------------------------------------------------------------------------
-// COMPATIBILITÉ AVEC L'ANCIENNE API (/api/save & /api/load)
-// -----------------------------------------------------------------------------
-const BACKUP_FILE = path.join(__dirname, 'kanbinou-backup.secure.json');
-app.post('/api/save', (req, res) => {
-  try {
-    fs.writeFileSync(BACKUP_FILE, JSON.stringify(req.body));
-    res.sendStatus(200);
-  } catch (err) {
-    res.status(500).send('Erreur serveur');
-  }
-});
 
-app.get('/api/load', (req, res) => {
-  try {
-    if (!fs.existsSync(BACKUP_FILE)) return res.status(404).send('Aucune sauvegarde');
-    res.sendFile(BACKUP_FILE);
-  } catch (err) {
-    res.status(500).send('Erreur serveur');
-  }
-});
 
 // Servir le front-end compilé en production
 app.use(express.static(path.join(__dirname, 'dist')));

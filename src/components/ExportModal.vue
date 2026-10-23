@@ -254,6 +254,23 @@ async function applyImport() {
       await db.allocations.bulkPut(toPlainObject(data.allocations));
     }
 
+    if (data.categories && data.categories.length > 0) {
+      await db.categories.bulkPut(toPlainObject(data.categories));
+    }
+
+    if (data.columns && data.columns.length > 0) {
+      await db.columns.bulkPut(toPlainObject(data.columns));
+    }
+
+    if (store.user && data.tasks && data.tasks.length > 0) {
+      data.tasks.forEach(t => {
+        if (!t.userId) {
+          t.userId = store.user.id;
+          t.userName = store.user.displayName || store.user.username;
+        }
+      });
+    }
+
     if (data.tasks && data.tasks.length > 0) {
       await db.tasks.bulkPut(toPlainObject(data.tasks));
     }
@@ -263,6 +280,9 @@ async function applyImport() {
     }
 
     await store.loadLocalData();
+    if (store.isOnline && store.user) {
+      await store.syncWithServer();
+    }
     alert(`Importation réussie ! ${data.tasks.length} tâche(s) ont été intégrées.`);
     close();
   } catch (err) {

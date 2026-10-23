@@ -1,5 +1,5 @@
 // Kanbinou - Service Worker Natif (W3C Standard)
-const CACHE_NAME = 'kanbinou-app-v3.0.0';
+const CACHE_NAME = 'kanbinou-app-v3.0.2';
 
 const PRECACHE_ASSETS = [
   './',
@@ -36,14 +36,19 @@ self.addEventListener('activate', (event) => {
 
 // Interception des requêtes
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // 1. Les requêtes API ne sont pas mises en cache par le SW (gérées par IndexedDB côté client)
-  if (url.pathname.startsWith('/api/')) {
+  // 1. Ne JAMAIS intercepter ni cacher les requêtes non-GET (POST, PUT, DELETE...)
+  if (event.request.method !== 'GET') {
     return;
   }
 
-  // 2. Navigation vers une page HTML -> Network first avec fallback sur index.html (pour SPA)
+  const url = new URL(event.request.url);
+
+  // 2. Les requêtes API ne sont jamais mises en cache (sous-dossier ou racine)
+  if (url.pathname.includes('/api/')) {
+    return;
+  }
+
+  // 3. Navigation vers une page HTML -> Network first avec fallback sur index.html (pour SPA)
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -53,7 +58,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Assets statiques (JS, CSS, images, polices) -> Cache First avec fallback réseau
+  // 4. Assets statiques (JS, CSS, images, polices) -> Cache First avec fallback réseau
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -66,7 +71,7 @@ self.addEventListener('fetch', (event) => {
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
           cache.put(event.request, responseToCache);
-        });
+        }).catch(() => {});
         return networkResponse;
       });
     })

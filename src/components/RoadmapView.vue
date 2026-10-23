@@ -75,7 +75,7 @@
           class="roadmap-resource-row"
         >
           <div class="resource-name-cell" :title="resource.name">
-            {{ resource.name }}
+            <span class="resource-title-text">{{ resource.name }}</span>
             <span class="resource-sub">{{ resource.category }}</span>
           </div>
 
@@ -96,10 +96,10 @@
               :class="{ 'has-conflict': isConflicting(alloc.id) }"
               :style="getAllocationStyle(alloc)"
               :title="`${alloc.label} (${alloc.userName}) : du ${alloc.startDate} au ${alloc.endDate}`"
-              @click="onAllocationClick(alloc)"
+              @click.stop="onAllocationClick(alloc)"
             >
               <span class="bar-user-badge">👤 {{ alloc.userName }}</span>
-              <span>{{ alloc.label }}</span>
+              <span class="bar-label-text">{{ alloc.label }}</span>
             </div>
           </div>
         </div>
@@ -137,6 +137,19 @@ const currentMonthLabel = computed(() => {
   return currentDate.value.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 });
 
+// Largeurs dynamiques en fonction de l'écran (calculs de position précis pour la ligne et le scroll)
+const cellWidth = computed(() => {
+  if (typeof window !== 'undefined' && window.innerWidth <= 400) return 28;
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) return 32;
+  return 36;
+});
+
+const headerWidth = computed(() => {
+  if (typeof window !== 'undefined' && window.innerWidth <= 400) return 85;
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) return 105;
+  return 180;
+});
+
 // Vérifie si le mois affiché correspond au mois en cours
 const isCurrentMonthActive = computed(() => {
   const now = new Date();
@@ -151,10 +164,9 @@ const todayLineOffset = computed(() => {
   if (!isCurrentMonthActive.value) return null;
   const now = new Date();
   const dayIndex = now.getDate() - 1;
-  const headerWidth = 180;
-  const cellWidth = 36;
-  // Placé exactement au milieu de la colonne du jour
-  return headerWidth + (dayIndex * cellWidth) + (cellWidth / 2);
+  const cW = cellWidth.value;
+  const hW = headerWidth.value;
+  return hW + (dayIndex * cW) + (cW / 2);
 });
 
 const daysInMonth = computed(() => {
@@ -213,7 +225,10 @@ function resetToCurrentMonth() {
 function scrollToToday() {
   if (isCurrentMonthActive.value && scrollWrapper.value) {
     const now = new Date();
-    const targetX = 180 + ((now.getDate() - 1) * 36) - 150;
+    const cW = cellWidth.value;
+    const hW = headerWidth.value;
+    const viewW = scrollWrapper.value.clientWidth || 360;
+    const targetX = hW + ((now.getDate() - 1) * cW) - (viewW / 2) + (cW / 2);
     scrollWrapper.value.scrollTo({ left: Math.max(0, targetX), behavior: 'smooth' });
   }
 }
@@ -253,9 +268,9 @@ function getAllocationStyle(alloc) {
   const startIndex = startDay - 1;
   const duration = Math.max(1, endDay - startDay + 1);
 
-  const cellWidth = 36;
-  const left = startIndex * cellWidth;
-  const width = (duration * cellWidth) - 4;
+  const cW = cellWidth.value;
+  const left = startIndex * cW;
+  const width = Math.max(12, (duration * cW) - 4);
 
   return {
     left: `${left}px`,

@@ -108,6 +108,7 @@ const timeTotal = computed(() => {
 });
 
 function onDragOver() {
+  if (store.isMobile) return;
   isDragOver.value = true;
 }
 
@@ -116,8 +117,9 @@ function onDragLeave() {
 }
 
 function onDrop(event) {
+  if (store.isMobile) return;
   isDragOver.value = false;
-  const taskId = event.dataTransfer.getData('text/plain');
+  const taskId = event.dataTransfer?.getData('text/plain');
   if (taskId) {
     store.moveTask(taskId, props.column.id);
   }
