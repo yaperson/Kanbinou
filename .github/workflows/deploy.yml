@@ -79,8 +79,6 @@ jobs:
     name: 🌐 Déploiement Mutualisé (OVH / FTPS)
     needs: build
     runs-on: ubuntu-latest
-    # Ne s'exécute que si les secrets FTP sont configurés dans les réglages du dépôt GitHub
-    if: "${{ vars.FTP_SERVER != '' || secrets.FTP_SERVER != '' }}"
     steps:
       - name: 📥 Récupération du build compilé
         uses: actions/download-artifact@v4
@@ -89,9 +87,12 @@ jobs:
           path: release-mutualise
 
       - name: 🚀 Synchronisation FTP Sécurisée (avec préservation des données)
+        if: ${{ env.FTP_SERVER != '' }}
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER || vars.FTP_SERVER }}
+          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ secrets.FTP_PORT || 21 }}
