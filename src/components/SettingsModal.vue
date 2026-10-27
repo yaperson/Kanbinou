@@ -47,7 +47,7 @@
 
       <!-- Corps dynamique modulaire avec défilement fluide -->
       <div class="modal-body settings-body">
-        <SettingsLayoutTab v-if="activeTab === 'layout'" />
+        <SettingsLayoutTab v-if="activeTab === 'layout'" @go-to-columns="selectTab('columns')" />
         <SettingsColumnsTab v-else-if="activeTab === 'columns'" />
         <SettingsCategoriesTab v-else-if="activeTab === 'categories'" />
         <SettingsTerminologyTab v-else-if="activeTab === 'terminology'" />

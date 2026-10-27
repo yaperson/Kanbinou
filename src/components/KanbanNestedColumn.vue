@@ -26,6 +26,7 @@
           'subcolumn-top': index === 0,
           'subcolumn-bottom': index === resolvedColumns.length - 1 && resolvedColumns.length === 2
         }"
+        :style="getSubcolumnStyle(col.id, index)"
         @dragover.prevent="onDragOver(col.id, $event)"
         @dragleave="onDragLeave(col.id)"
         @drop.prevent="onDrop(col.id, $event)"
@@ -74,6 +75,18 @@
           <div v-if="getTasksForCol(col.id).length === 0" class="empty-drop-hint">
             Déposer ici pour passer en "{{ col.title }}"
           </div>
+        </div>
+
+        <!-- Ajout rapide au bas de la sous-colonne si À faire ou première colonne -->
+        <div class="column-footer" v-if="isAddColumn(col.id)">
+          <form class="quick-add-form" @submit.prevent="submitQuickAdd(col.id)">
+            <input 
+              type="text" 
+              v-model="quickTexts[col.id]" 
+              placeholder="Ajouter une tâche..."
+            />
+            <button type="submit" title="Ajouter">+</button>
+          </form>
         </div>
       </div>
     </template>
@@ -205,6 +218,39 @@ function getTimeTotal(colId) {
   const tasks = getTasksForCol(colId);
   const sum = tasks.reduce((acc, t) => acc + (parseFloat(t.time) || 0), 0);
   return sum > 0 ? sum.toFixed(1) : 0;
+}
+
+// Répartition dynamique de la hauteur selon le nombre de tâches (mode auto)
+function getSubcolumnStyle(colId, index) {
+  if (isCollapsed(colId)) return {};
+  if (store.nestedConfig?.splitRatio === 'auto' && resolvedColumns.value.length === 2) {
+    const otherIdx = index === 0 ? 1 : 0;
+    const otherId = resolvedColumns.value[otherIdx]?.id;
+    if (isCollapsed(otherId)) return { flex: '1 1 100%' };
+
+    const countA = getTasksForCol(colId).length;
+    const countB = getTasksForCol(otherId).length;
+    const weightA = Math.max(1.5, countA + 1);
+    const weightB = Math.max(1.5, countB + 1);
+    const pct = Math.round((weightA / (weightA + weightB)) * 100);
+    return { flex: `0 0 ${pct}%`, minHeight: '90px' };
+  }
+  return {};
+}
+
+// Ajout rapide au bas d'une sous-colonne (ex: À faire ou première étape)
+const quickTexts = ref({});
+
+function isAddColumn(colId) {
+  return colId === 'todo' || colId === store.columns[0]?.id;
+}
+
+function submitQuickAdd(colId) {
+  const text = quickTexts.value[colId];
+  if (text && text.trim()) {
+    store.createTask(text.trim(), colId);
+    quickTexts.value[colId] = '';
+  }
 }
 </script>
 

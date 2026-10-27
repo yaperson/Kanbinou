@@ -354,6 +354,9 @@ export const useAppStore = defineStore('app', {
       this.columns = (rawCols || []).filter(c => {
         if (!c || !c.id || seenColIds.has(c.id)) return false;
         seenColIds.add(c.id);
+        if (c.parentId === undefined) {
+          c.parentId = c.id === 'waiting' ? 'doing' : null;
+        }
         return true;
       });
       try {
@@ -1125,7 +1128,7 @@ export const useAppStore = defineStore('app', {
     },
 
     // --- Actions Colonnes ---
-    async createColumn(title, color = '#64748b') {
+    async createColumn(title, color = '#64748b', parentId = null) {
       if (this.user && this.user.role !== 'admin') {
         alert('Seul un administrateur peut créer ou modifier les colonnes.');
         return null;
@@ -1139,7 +1142,8 @@ export const useAppStore = defineStore('app', {
         title: cleanTitle,
         color: color || '#64748b',
         order,
-        isVisible: true
+        isVisible: true,
+        parentId: parentId || null
       };
       await db.columns.put(toPlainObject(newCol));
       this.columns.push(newCol);
@@ -1169,6 +1173,58 @@ export const useAppStore = defineStore('app', {
       }
     },
 
+    async toggleColumnGray(columnId, isGray) {
+      const col = this.columns.find(c => c.id === columnId);
+      if (col) {
+        col.isGrayBackground = isGray;
+        await db.columns.put(toPlainObject(col));
+      }
+      let list = Array.isArray(this.nestedConfig?.graySubcolumnIds) 
+        ? [...this.nestedConfig.graySubcolumnIds] 
+        : ['waiting'];
+      if (isGray) {
+        if (!list.includes(columnId)) list.push(columnId);
+      } else {
+        list = list.filter(id => id !== columnId);
+      }
+      await this.setNestedConfig({ graySubcolumnIds: list });
+      try {
+        localStorage.setItem('kanbinou_columns', JSON.stringify(toPlainObject(this.columns)));
+      } catch (e) {}
+    },
+
+    async nestColumn(childId, parentId) {
+      if (this.user && this.user.role !== 'admin') {
+        alert('Seul un administrateur peut modifier l\'organisation des colonnes.');
+        return;
+      }
+      const child = this.columns.find(c => c.id === childId);
+      if (!child) return;
+
+      if (!parentId) {
+        child.parentId = null;
+      } else {
+        // Empêcher l'auto-imbrication ou l'imbrication dans une colonne déjà enfant (2 étages max)
+        const parent = this.columns.find(c => c.id === parentId);
+        if (!parent || parent.id === childId || parent.parentId) return;
+        // Si le parent avait déjà un autre enfant, libérer cet ancien enfant
+        const existingChild = this.columns.find(c => c.parentId === parentId && c.id !== childId);
+        if (existingChild) {
+          existingChild.parentId = null;
+          await db.columns.put(toPlainObject(existingChild));
+        }
+        child.parentId = parentId;
+      }
+
+      await db.columns.put(toPlainObject(child));
+      try {
+        localStorage.setItem('kanbinou_columns', JSON.stringify(toPlainObject(this.columns)));
+      } catch (e) {}
+      if (this.isOnline && this.user) {
+        api.saveConfig({ columns: toPlainObject(this.columns) }).catch(() => {});
+      }
+    },
+
     async deleteColumn(id) {
       if (this.user && this.user.role !== 'admin') {
         alert('Seul un administrateur peut supprimer des colonnes.');
@@ -1178,12 +1234,19 @@ export const useAppStore = defineStore('app', {
         alert('Les colonnes fondamentales (À faire, En cours, En attente, Terminé) ne peuvent pas être supprimées.');
         return;
       }
-      // Déplacer les tâches vers la colonne 'todo'
+      // 1. Déplacer les tâches vers la colonne 'todo'
       const affected = this.tasks.filter(t => t.columnId === id);
       for (const t of affected) {
         t.columnId = 'todo';
         await db.tasks.put(toPlainObject(t));
       }
+      // 2. Désimbriquer les éventuelles sous-colonnes enfants
+      const children = this.columns.filter(c => c.parentId === id);
+      for (const child of children) {
+        child.parentId = null;
+        await db.columns.put(toPlainObject(child));
+      }
+      // 3. Supprimer la colonne
       await db.columns.delete(id);
       this.columns = this.columns.filter(c => c.id !== id);
       try {
@@ -1200,10 +1263,10 @@ export const useAppStore = defineStore('app', {
         return;
       }
       const defaults = [
-        { id: 'todo', title: 'À faire', order: 1, isVisible: true, color: '#0284c7' },
-        { id: 'doing', title: 'En cours', order: 2, isVisible: true, color: '#f59e0b' },
-        { id: 'waiting', title: 'En attente', order: 3, isVisible: true, color: '#8b5cf6' },
-        { id: 'done', title: 'Terminé', order: 4, isVisible: true, color: '#10b981' }
+        { id: 'todo', title: 'À faire', order: 1, isVisible: true, color: '#0284c7', parentId: null },
+        { id: 'doing', title: 'En cours', order: 2, isVisible: true, color: '#f59e0b', parentId: null },
+        { id: 'waiting', title: 'En attente', order: 3, isVisible: true, color: '#8b5cf6', parentId: 'doing' },
+        { id: 'done', title: 'Terminé', order: 4, isVisible: true, color: '#10b981', parentId: null }
       ];
       await db.columns.clear();
       await db.columns.bulkPut(defaults);

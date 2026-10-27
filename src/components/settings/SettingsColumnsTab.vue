@@ -73,6 +73,64 @@
             {{ getTaskCount(col.id) }} tâche{{ getTaskCount(col.id) > 1 ? 's' : '' }}
           </span>
 
+          <!-- Imbrication / Sous-colonne -->
+          <div class="col-nesting-control">
+            <template v-if="col.parentId">
+              <span class="badge-nest-child" :title="'Imbriquée sous ' + getColTitle(col.parentId)">
+                ↳ Sous <strong>{{ getColTitle(col.parentId) }}</strong>
+              </span>
+              <label v-if="isAdmin" class="toggle-gray-pill mini" title="Afficher les cartes de cette étape avec un fond grisé">
+                <input 
+                  type="checkbox" 
+                  :checked="isColumnGray(col)" 
+                  @change="onToggleGray(col, $event.target.checked)" 
+                />
+                <span>Fond gris</span>
+              </label>
+              <button 
+                v-if="isAdmin"
+                type="button" 
+                class="btn-unnest" 
+                @click="store.nestColumn(col.id, null)"
+                title="Détacher cette étape pour qu'elle redevienne une colonne indépendante"
+              >
+                ✕ Séparer
+              </button>
+            </template>
+
+            <template v-else-if="getChildCol(col.id)">
+              <span class="badge-nest-parent" :title="'Contient la sous-colonne ' + getChildCol(col.id).title">
+                Contient : <strong>{{ getChildCol(col.id).title }}</strong>
+              </span>
+              <button 
+                v-if="isAdmin"
+                type="button" 
+                class="btn-unnest" 
+                @click="store.nestColumn(getChildCol(col.id).id, null)"
+                title="Détacher la sous-colonne"
+              >
+                ✕ Séparer
+              </button>
+            </template>
+
+            <template v-else-if="isAdmin && getAvailableParents(col.id).length > 0">
+              <select 
+                class="select-nest-parent" 
+                @change="onNestSelect(col.id, $event)"
+                title="Imbriquer cette colonne sous une autre étape (partage de l'écran 50/50)"
+              >
+                <option value="">↳ Imbriquer sous...</option>
+                <option 
+                  v-for="p in getAvailableParents(col.id)" 
+                  :key="p.id" 
+                  :value="p.id"
+                >
+                  Sous {{ p.title }}
+                </option>
+              </select>
+            </template>
+          </div>
+
           <!-- Flèches pour changer l'ordre des colonnes -->
           <div v-if="isAdmin" class="col-reorder-arrows">
             <button 
@@ -179,6 +237,43 @@ async function moveColumn(idx, delta) {
 
 function getTaskCount(colId) {
   return store.tasks.filter(t => t.columnId === colId).length;
+}
+
+function getColTitle(id) {
+  const col = store.columns.find(c => c.id === id);
+  return col ? col.title : id;
+}
+
+function getChildCol(parentId) {
+  return store.columns.find(c => c.parentId === parentId);
+}
+
+function getAvailableParents(colId) {
+  const thisHasChild = Boolean(getChildCol(colId));
+  if (thisHasChild) return [];
+  return store.columns.filter(c => 
+    c.id !== colId &&
+    !c.parentId &&
+    !getChildCol(c.id) &&
+    c.isVisible !== false
+  );
+}
+
+async function onNestSelect(colId, event) {
+  const targetParentId = event.target.value;
+  if (!targetParentId) return;
+  await store.nestColumn(colId, targetParentId);
+  event.target.value = '';
+}
+
+function isColumnGray(col) {
+  if (typeof col.isGrayBackground === 'boolean') return col.isGrayBackground;
+  if (Array.isArray(store.nestedConfig?.graySubcolumnIds)) return store.nestedConfig.graySubcolumnIds.includes(col.id);
+  return col.id === 'waiting';
+}
+
+async function onToggleGray(col, isGray) {
+  await store.toggleColumnGray(col.id, isGray);
 }
 </script>
 
@@ -299,6 +394,80 @@ function getTaskCount(colId) {
   background: #f1f5f9;
   padding: 3px 8px;
   border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.col-nesting-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge-nest-child {
+  font-size: 0.75rem;
+  background: #f0f9ff;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-nest-parent {
+  font-size: 0.75rem;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px dashed #cbd5e1;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.btn-unnest {
+  font-size: 0.72rem;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: #64748b;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-unnest:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.select-nest-parent {
+  font-size: 0.75rem;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 3px 6px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.select-nest-parent:focus {
+  outline: none;
+  border-color: #0284c7;
+}
+
+.toggle-gray-pill.mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  user-select: none;
   white-space: nowrap;
 }
 

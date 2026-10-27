@@ -45,6 +45,15 @@
           Roadmap
         </button>
 
+        <!-- Création rapide d'une tâche -->
+        <button 
+          class="btn btn-primary btn-nav-create-task" 
+          @click="createNewTask" 
+          title="Créer une nouvelle tâche"
+        >
+          ＋ Tâche
+        </button>
+
         <!-- Modales d'action -->
         <button class="btn" @click="store.activeModal = 'resources'">
           {{ store.terminology.resourceIcon || '🦼' }} {{ store.terminology.resourcePlural }}
@@ -73,4 +82,8 @@
 <script setup>
 import { useAppStore } from '../stores/app.js';
 const store = useAppStore();
+
+function createNewTask() {
+  store.openNewTaskModal(store.columns[0]?.id || 'todo');
+}
 </script>

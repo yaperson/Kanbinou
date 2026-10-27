@@ -1,0 +1,37 @@
+# =============================================================================
+# Kanbinou - Déploiement Local & Serveur NAS (Synology, QNAP, VPS, Serveur dédié)
+# =============================================================================
+# Lancement rapide :
+#   docker compose up -d --build
+#
+# Arrêt :
+#   docker compose down
+#
+# Les données (kanbinou.sqlite) sont stockées dans le dossier local ./data/
+# =============================================================================
+
+services:
+  kanbinou:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kanbinou:latest
+    container_name: kanbinou-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/data
+      # Définir un secret optionnel ou laisser Kanbinou en générer un automatiquement et le persister
+      # - JWT_SECRET=votre_cle_secrete_ultra_securisee
+    volumes:
+      # Persistance de la base SQLite et des secrets sur la machine hôte / NAS
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/config', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -37,10 +37,10 @@ export function toPlainObject(data) {
 
 // Valeurs par défaut
 export const DEFAULT_COLUMNS = [
-  { id: 'todo', title: 'À faire', order: 1, isVisible: true, color: '#0284c7' },
-  { id: 'doing', title: 'En cours', order: 2, isVisible: true, color: '#f59e0b' },
-  { id: 'waiting', title: 'En attente', order: 3, isVisible: true, color: '#8b5cf6' },
-  { id: 'done', title: 'Terminé', order: 4, isVisible: true, color: '#10b981' }
+  { id: 'todo', title: 'À faire', order: 1, isVisible: true, color: '#0284c7', parentId: null },
+  { id: 'doing', title: 'En cours', order: 2, isVisible: true, color: '#f59e0b', parentId: null },
+  { id: 'waiting', title: 'En attente', order: 3, isVisible: true, color: '#8b5cf6', parentId: 'doing' },
+  { id: 'done', title: 'Terminé', order: 4, isVisible: true, color: '#10b981', parentId: null }
 ];
 
 export const DEFAULT_CATEGORIES = [

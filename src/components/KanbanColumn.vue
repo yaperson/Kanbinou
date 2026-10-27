@@ -42,8 +42,8 @@
       />
     </div>
 
-    <!-- Ajout rapide au bas de la colonne (principalement À faire) -->
-    <div class="column-footer" v-if="column.id === 'todo'">
+    <!-- Ajout rapide au bas de la colonne (À faire ou première colonne) -->
+    <div class="column-footer" v-if="column.id === 'todo' || column.id === store.columns[0]?.id">
       <form class="quick-add-form" @submit.prevent="submitQuickAdd">
         <input 
           type="text" 

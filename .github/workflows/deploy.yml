@@ -1,4 +1,4 @@
-name: Déploiement GitHub Pages
+name: CI/CD - Kanbinou (Build, Mutualisé & Déploiement)
 
 on:
   push:
@@ -11,39 +11,134 @@ permissions:
   id-token: write
 
 concurrency:
-  group: 'pages'
+  group: 'deploy-kanbinou'
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # ===========================================================================
+  # 1. Compilation & Préparation du Package Universel
+  # ===========================================================================
+  build:
+    name: 🔨 Compilation & Packaging
     runs-on: ubuntu-latest
     steps:
-      - name: Récupération du code
+      - name: 📥 Récupération du dépôt
         uses: actions/checkout@v4
 
-      - name: Configuration de Node.js
+      - name: ⚙️ Configuration de Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
-      - name: Installation des dépendances
-        run: npm install
+      - name: 📦 Installation des dépendances
+        run: npm ci
 
-      - name: Compilation Vite (Production)
+      - name: 🚀 Compilation de l'interface Vue 3 (Vite)
         run: npm run build
 
-      - name: Configuration GitHub Pages
+      - name: 📦 Préparation du dossier de production pour hébergement mutualisé (OVH / cPanel)
+        run: |
+          mkdir -p release-mutualise
+          # 1. Copie des fichiers front-end à la racine
+          cp -r dist/* release-mutualise/
+          # 2. Copie de l'API PHP souveraine
+          mkdir -p release-mutualise/api
+          cp api/index.php release-mutualise/api/
+          cp api/.htaccess release-mutualise/api/
+          # 3. Sécurisation du dossier data (SANS inclure de base SQLite préexistante)
+          mkdir -p release-mutualise/api/data
+          if [ -f api/data/.htaccess ]; then
+            cp api/data/.htaccess release-mutualise/api/data/
+          else
+            echo -e "Order Deny,Allow\nDeny from all\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>" > release-mutualise/api/data/.htaccess
+          fi
+
+      - name: 🗜️ Création de l'archive ZIP déployable en 1 clic
+        run: |
+          cd release-mutualise && zip -r ../kanbinou-mutualise.zip . && cd ..
+
+      - name: 💾 Sauvegarde de l'artefact ZIP téléchargeable
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanbinou-mutualise-package
+          path: kanbinou-mutualise.zip
+          retention-days: 14
+
+      - name: 📤 Sauvegarde temporaire pour les jobs suivants
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-release
+          path: release-mutualise/
+          retention-days: 1
+
+  # ===========================================================================
+  # 2. Déploiement Automatique sur Hébergement Mutualisé (FTP / FTPS)
+  # ===========================================================================
+  deploy-mutualise:
+    name: 🌐 Déploiement Mutualisé (OVH / FTPS)
+    needs: build
+    runs-on: ubuntu-latest
+    # Ne s'exécute que si les secrets FTP sont configurés dans les réglages du dépôt GitHub
+    if: "${{ vars.FTP_SERVER != '' || secrets.FTP_SERVER != '' }}"
+    steps:
+      - name: 📥 Récupération du build compilé
+        uses: actions/download-artifact@v4
+        with:
+          name: built-release
+          path: release-mutualise
+
+      - name: 🚀 Synchronisation FTP Sécurisée (avec préservation des données)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER || vars.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT || 21 }}
+          protocol: ftps
+          local-dir: ./release-mutualise/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR || 'www/' }}
+          # RÈGLE VITALE : Ne JAMAIS écraser la base SQLite client ni les secrets sur le serveur OVH
+          exclude: |
+            **/.git*
+            **/.git*/**
+            api/data/.ht_kanbinou.sqlite*
+            api/data/.ht_secret.key*
+            api/data/*.sqlite*
+
+  # ===========================================================================
+  # 3. Déploiement Démo GitHub Pages (App Shell)
+  # ===========================================================================
+  deploy-pages:
+    name: 📄 Déploiement GitHub Pages (Démo)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 📥 Récupération du code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Configuration de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Installation & Build Vite
+        run: |
+          npm ci
+          npm run build
+
+      - name: ⚙️ Configuration GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Téléversement de l'App Shell (dist)
+      - name: 📤 Téléversement de l'artefact Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
 
-      - name: Déploiement sur GitHub Pages
+      - name: 🚀 Déploiement effectif
         id: deployment
         uses: actions/deploy-pages@v4

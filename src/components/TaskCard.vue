@@ -2,7 +2,7 @@
   <div 
     class="task-card"
     :class="{ 
-      'task-waiting': isBottomSubcol && store.nestedConfig?.grayBottomBackground !== false,
+      'task-waiting': isGrayCard,
       'is-touch-device': store.isMobile
     }"
     :draggable="!store.isMobile"
@@ -48,12 +48,16 @@ const category = computed(() => store.categories.find(c => c.id === props.task.c
 const categoryName = computed(() => category.value ? category.value.name : 'Neutre');
 const categoryColor = computed(() => category.value ? category.value.color : '#e0e0e0');
 
-const isBottomSubcol = computed(() => {
-  const grayList = store.nestedConfig?.graySubcolumnIds;
-  if (Array.isArray(grayList) && grayList.length > 0) {
-    return grayList.includes(props.task.columnId);
+const isGrayCard = computed(() => {
+  const col = store.columns.find(c => c.id === props.task.columnId);
+  if (!col) return false;
+  if (typeof col.isGrayBackground === 'boolean') {
+    return col.isGrayBackground;
   }
-  return props.task.columnId === (store.nestedConfig?.colCenterBottomId || 'waiting');
+  if (Array.isArray(store.nestedConfig?.graySubcolumnIds)) {
+    return store.nestedConfig.graySubcolumnIds.includes(col.id);
+  }
+  return col.id === 'waiting';
 });
 
 const linkedResource = computed(() => {

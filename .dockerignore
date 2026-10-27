@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+dist
+kanbinou
+kanbinou.sqlite
+kanbinou.sqlite-wal
+kanbinou.sqlite-shm
+.jwt_secret
+.git
+.github
+.vscode
+api/data
+*.local

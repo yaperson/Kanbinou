@@ -15,8 +15,14 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Support du dossier de données persistant (idéal pour Docker / volumes NAS)
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
 // Gestion robuste du secret JWT : persistance automatique dans un fichier local protégé
-const SECRET_FILE = path.join(__dirname, '.jwt_secret');
+const SECRET_FILE = process.env.SECRET_FILE || path.join(DATA_DIR, '.jwt_secret');
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   if (fs.existsSync(SECRET_FILE)) {
@@ -35,7 +41,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // Initialisation de la base SQLite locale
-const DB_FILE = path.join(__dirname, 'kanbinou.sqlite');
+const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, 'kanbinou.sqlite');
 const db = new Database(DB_FILE);
 
 // Optimisation WAL (Write-Ahead Logging) pour de hautes performances concurrentes
