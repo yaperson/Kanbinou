@@ -43,6 +43,14 @@
           <span class="tab-icon">🦼</span>
           <span>Mon Métier</span>
         </button>
+        <button 
+          class="tab-btn" 
+          :class="{ 'is-active': activeTab === 'calendar' }"
+          @click="selectTab('calendar')"
+        >
+          <span class="tab-icon">📅</span>
+          <span>Agenda</span>
+        </button>
       </nav>
 
       <!-- Corps dynamique modulaire avec défilement fluide -->
@@ -51,6 +59,7 @@
         <SettingsColumnsTab v-else-if="activeTab === 'columns'" />
         <SettingsCategoriesTab v-else-if="activeTab === 'categories'" />
         <SettingsTerminologyTab v-else-if="activeTab === 'terminology'" />
+        <SettingsCalendarTab v-else-if="activeTab === 'calendar'" />
       </div>
 
       <!-- Pied de page simple (verrouillé, toujours visible) -->
@@ -70,6 +79,7 @@ import SettingsLayoutTab from './settings/SettingsLayoutTab.vue';
 import SettingsColumnsTab from './settings/SettingsColumnsTab.vue';
 import SettingsCategoriesTab from './settings/SettingsCategoriesTab.vue';
 import SettingsTerminologyTab from './settings/SettingsTerminologyTab.vue';
+import SettingsCalendarTab from './settings/SettingsCalendarTab.vue';
 
 const store = useAppStore();
 

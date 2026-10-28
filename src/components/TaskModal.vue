@@ -6,7 +6,14 @@
         <h3>{{ isNewTask ? 'Nouvelle tâche' : 'Détails de la tâche' }}</h3>
         <div class="modal-header-actions">
           <button v-if="!isNewTask" class="btn btn-sm" type="button" @click="printDetails" title="Imprimer la fiche">Imprimer</button>
-          <button v-if="!isNewTask" class="btn btn-sm btn-outline" type="button" @click="addToCalendar" title="Ajouter directement dans votre agenda">📅 Agenda</button>
+          <button
+            class="btn btn-sm btn-outline"
+            type="button"
+            @click="addToCalendar"
+            :title="store.calendarConfig.isConfigured ? `Envoyer vers : ${store.calendarConfig.calendarName}` : 'Aucun agenda n\'est configuré'"
+          >
+            📅 Agenda
+          </button>
           <button class="close-btn" type="button" @click="close">&times;</button>
         </div>
       </div>
@@ -283,37 +290,7 @@ function printDetails() {
 
 function addToCalendar() {
   if (!taskForm.value) return;
-  const t = taskForm.value;
-  
-  // Dates au format compact YYYYMMDD
-  const rawStart = t.startDate || new Date().toISOString().slice(0, 10);
-  const startStr = rawStart.replace(/-/g, '');
-  
-  // Pour Google Calendar, la date de fin sur journée entière est exclusive (lendemain)
-  let endStr = startStr;
-  if (t.endDate) {
-    const endD = new Date(t.endDate);
-    endD.setDate(endD.getDate() + 1);
-    endStr = endD.toISOString().slice(0, 10).replace(/-/g, '');
-  } else {
-    const startD = new Date(rawStart);
-    startD.setDate(startD.getDate() + 1);
-    endStr = startD.toISOString().slice(0, 10).replace(/-/g, '');
-  }
-
-  const res = store.resources.find(r => r.id === t.resourceId);
-  const title = (res ? `[${res.name}] ` : '') + t.title;
-  
-  let details = t.description || '';
-  if (t.sensitive?.phone) details += `\n📞 Tél : ${t.sensitive.phone}`;
-  if (t.sensitive?.email) details += `\n✉️ Email : ${t.sensitive.email}`;
-  if (res) details += `\n🦼 Matériel : ${res.name}`;
-  
-  const location = t.sensitive?.address || '';
-
-  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startStr}/${endStr}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
-  
-  window.open(gcalUrl, '_blank');
+  store.exportTaskToCalendar(taskForm.value, false);
 }
 
 function escapeXml(unsafe) {

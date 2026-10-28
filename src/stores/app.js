@@ -90,6 +90,20 @@ export const useAppStore = defineStore('app', {
       grayBottomBackground: true,
       graySubcolumnIds: ['waiting']
     },
+    calendarConfig: {
+      isConfigured: false,
+      protocol: 'caldav', // 'caldav' | 'ssl'
+      calendarName: '',
+      caldavUrl: '',
+      folderId: 'calendar',
+      availableCalendars: [],
+      username: '',
+      password: '',
+      autoShareRoadmap: false,
+      startHour: '08:00',
+      endHour: '08:00'
+    },
+    toast: null,
     isOnline: navigator.onLine,
     isSyncing: false,
     user: (() => {
@@ -435,6 +449,18 @@ export const useAppStore = defineStore('app', {
       if (!Array.isArray(this.nestedConfig.graySubcolumnIds)) {
         this.nestedConfig.graySubcolumnIds = [this.nestedConfig.colCenterBottomId || 'waiting'];
       }
+
+      const cal = await db.meta.get('calendarConfig');
+      if (cal && cal.value) {
+        this.calendarConfig = { ...this.calendarConfig, ...cal.value };
+      } else {
+        try {
+          const storedCal = localStorage.getItem('kanbinou_calendar_config');
+          if (storedCal) {
+            this.calendarConfig = { ...this.calendarConfig, ...JSON.parse(storedCal) };
+          }
+        } catch (e) {}
+      }
     },
 
     // Traitement des notifications SSE en temps réel
@@ -492,6 +518,7 @@ export const useAppStore = defineStore('app', {
     },
 
     async saveTask(task) {
+      const existingTask = this.tasks.find(t => t.id === task.id);
       task.updatedAt = new Date().toISOString();
       if (!task.userId && this.user) {
         task.userId = this.user.id;
@@ -501,6 +528,12 @@ export const useAppStore = defineStore('app', {
       // Gestion de la réservation / essai sur la roadmap
       const category = this.categories.find(c => c.id === task.categoryId);
       const isRoadmapEligible = category && category.isRoadmapEligible;
+      const shouldAutoShareToCalendar = isRoadmapEligible && task.resourceId && task.startDate && (
+        !existingTask ||
+        existingTask.resourceId !== task.resourceId ||
+        existingTask.startDate !== task.startDate ||
+        existingTask.endDate !== task.endDate
+      );
 
       if (isRoadmapEligible && task.resourceId && task.startDate && task.endDate) {
         if (!task.allocationId) {
@@ -561,6 +594,11 @@ export const useAppStore = defineStore('app', {
       }
 
       await this.loadLocalData();
+
+      // Si le partage automatique de la roadmap vers l'agenda est activé
+      if (shouldAutoShareToCalendar && this.calendarConfig.isConfigured && this.calendarConfig.autoShareRoadmap) {
+        this.exportTaskToCalendar(task, true);
+      }
     },
 
     async deleteTask(taskId) {
@@ -1295,6 +1333,225 @@ export const useAppStore = defineStore('app', {
       if (this.isOnline && this.user) {
         api.saveConfig({ columns: toPlainObject(this.columns) }).catch(() => {});
       }
+    },
+
+    // --- Configuration Agenda & Synchronisation Directe (CalDAV / SSL Exchange) ---
+    async setCalendarConfig(updates) {
+      const merged = { ...this.calendarConfig, ...toPlainObject(updates) };
+      this.calendarConfig = merged;
+      await db.meta.put({ key: 'calendarConfig', value: toPlainObject(merged) });
+      try {
+        localStorage.setItem('kanbinou_calendar_config', JSON.stringify(toPlainObject(merged)));
+      } catch (e) {}
+    },
+
+    async connectCaldavCalendar({ protocol = 'caldav', url, username, password, startHour, endHour }) {
+      const res = await api.testCalendarConnection({ protocol, url, username, password });
+      if (!res || !res.success) {
+        throw new Error((res && res.error) || 'Impossible de se connecter à cet agenda.');
+      }
+      const calendars = Array.isArray(res.calendars) ? res.calendars : [];
+      await this.setCalendarConfig({
+        isConfigured: true,
+        protocol: res.protocol || protocol || 'caldav',
+        calendarName: res.calendarName,
+        caldavUrl: res.calendarUrl || url,
+        folderId: res.folderId || (calendars[0] && calendars[0].id) || 'calendar',
+        availableCalendars: calendars,
+        username,
+        password,
+        startHour: startHour || '08:00',
+        endHour: endHour || '08:00'
+      });
+      return res;
+    },
+
+    async exportTaskToCalendar(task, isAuto = false) {
+      if (!task) return;
+      if (
+        !this.calendarConfig ||
+        !this.calendarConfig.isConfigured ||
+        !this.calendarConfig.caldavUrl ||
+        !this.calendarConfig.username ||
+        !this.calendarConfig.password
+      ) {
+        this.showToast(
+          'Aucun agenda n\'est configuré',
+          'Aller dans les paramètres',
+          () => this.openSettingsTab('calendar')
+        );
+        return;
+      }
+
+      const res = this.resources.find(r => r.id === task.resourceId);
+      const resourceName = res ? res.name : '';
+      const prodSingular = this.terminology?.resourceSingular || 'Produit';
+      const evtSingular = this.terminology?.eventSingular || 'Essai';
+      const prodLabel = resourceName || task.title || prodSingular;
+      const startHour = this.calendarConfig.startHour || '08:00';
+      const endHour = this.calendarConfig.endHour || '08:00';
+
+      const formatIcsDateTime = (dateStr, timeStr, addMinutes = 0) => {
+        const [yyyy, mm, dd] = dateStr.split('-').map(Number);
+        const [hh, min] = (timeStr || '08:00').split(':').map(Number);
+        const d = new Date(yyyy, (mm || 1) - 1, dd || 1, hh || 8, (min || 0) + addMinutes, 0);
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+      };
+
+      const formatIsoDateTime = (dateStr, timeStr, addMinutes = 0) => {
+        const [yyyy, mm, dd] = dateStr.split('-').map(Number);
+        const [hh, min] = (timeStr || '08:00').split(':').map(Number);
+        const d = new Date(yyyy, (mm || 1) - 1, dd || 1, hh || 8, (min || 0) + addMinutes, 0);
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+      };
+
+      const escapeIcsText = (str) => {
+        if (!str) return '';
+        return String(str)
+          .replace(/\\/g, '\\\\')
+          .replace(/;/g, '\\;')
+          .replace(/,/g, '\\,')
+          .replace(/\r?\n/g, '\\n');
+      };
+
+      const wrapVCalendar = (veventLines) => [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Kanbinou//CalDAV//FR',
+        'CALSCALE:GREGORIAN',
+        ...veventLines,
+        'END:VCALENDAR'
+      ].join('\r\n');
+
+      const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      const location = task.sensitive?.address || '';
+
+      const descLines = [];
+      if (task.title) descLines.push(`Client / Tâche : ${task.title}`);
+      if (resourceName) descLines.push(`${prodSingular} : ${resourceName}`);
+      if (task.sensitive?.phone) descLines.push(`Téléphone : ${task.sensitive.phone}`);
+      if (task.sensitive?.email) descLines.push(`E-mail : ${task.sensitive.email}`);
+      if (task.sensitive?.address) descLines.push(`Adresse : ${task.sensitive.address}`);
+      if (task.description) descLines.push(`Infos / Notes : ${task.description}`);
+      const fullDescription = descLines.join('\n');
+
+      const eventsPayload = [];
+      const rawStart = task.startDate || new Date().toISOString().slice(0, 10);
+
+      // Jalon 1 : Jour du début à l'heure par défaut
+      const uidStart = `kanbinou-${task.id}-start`;
+      const summaryStart = resourceName
+        ? `Contacter pour valider l'${evtSingular.toLowerCase()} du ${prodLabel} (${task.title})`
+        : `Contacter pour valider : ${task.title}`;
+
+      eventsPayload.push({
+        uid: uidStart,
+        summary: summaryStart,
+        description: fullDescription,
+        location,
+        startIso: formatIsoDateTime(rawStart, startHour, 0),
+        endIso: formatIsoDateTime(rawStart, startHour, 45),
+        icsContent: wrapVCalendar([
+          'BEGIN:VEVENT',
+          `UID:${uidStart}@kanbinou`,
+          `DTSTAMP:${nowStamp}`,
+          `DTSTART:${formatIcsDateTime(rawStart, startHour, 0)}`,
+          `DTEND:${formatIcsDateTime(rawStart, startHour, 45)}`,
+          `SUMMARY:${escapeIcsText(summaryStart)}`,
+          `DESCRIPTION:${escapeIcsText(fullDescription)}`,
+          `LOCATION:${escapeIcsText(location)}`,
+          'BEGIN:VALARM',
+          'TRIGGER:-PT15M',
+          'ACTION:DISPLAY',
+          `DESCRIPTION:${escapeIcsText(summaryStart)}`,
+          'END:VALARM',
+          'END:VEVENT'
+        ])
+      });
+
+      // Jalon 2 : Jour de fin à l'heure par défaut (si une date de fin est présente)
+      if (task.endDate) {
+        const uidEnd = `kanbinou-${task.id}-end`;
+        const summaryEnd = resourceName
+          ? `Contacter pour récupérer le ${prodSingular.toLowerCase()} ${prodLabel} (${task.title})`
+          : `Contacter pour récupérer : ${task.title}`;
+
+        eventsPayload.push({
+          uid: uidEnd,
+          summary: summaryEnd,
+          description: fullDescription,
+          location,
+          startIso: formatIsoDateTime(task.endDate, endHour, 0),
+          endIso: formatIsoDateTime(task.endDate, endHour, 45),
+          icsContent: wrapVCalendar([
+            'BEGIN:VEVENT',
+            `UID:${uidEnd}@kanbinou`,
+            `DTSTAMP:${nowStamp}`,
+            `DTSTART:${formatIcsDateTime(task.endDate, endHour, 0)}`,
+            `DTEND:${formatIcsDateTime(task.endDate, endHour, 45)}`,
+            `SUMMARY:${escapeIcsText(summaryEnd)}`,
+            `DESCRIPTION:${escapeIcsText(fullDescription)}`,
+            `LOCATION:${escapeIcsText(location)}`,
+            'BEGIN:VALARM',
+            'TRIGGER:-PT15M',
+            'ACTION:DISPLAY',
+            `DESCRIPTION:${escapeIcsText(summaryEnd)}`,
+            'END:VALARM',
+            'END:VEVENT'
+          ])
+        });
+      }
+
+      try {
+        const calLabel = this.calendarConfig.calendarName || 'Agenda';
+        this.showToast(`⏳ Synchronisation avec ${calLabel}...`, null, null, 3000);
+
+        await api.pushCalendarEvents({
+          protocol: this.calendarConfig.protocol || 'caldav',
+          url: this.calendarConfig.caldavUrl,
+          folderId: this.calendarConfig.folderId || 'calendar',
+          username: this.calendarConfig.username,
+          password: this.calendarConfig.password,
+          events: eventsPayload
+        });
+
+        this.showToast(
+          isAuto
+            ? `✅ Ajouté automatiquement sur : ${calLabel}`
+            : `✅ Ajouté directement dans l'agenda : ${calLabel}`
+        );
+      } catch (err) {
+        this.showToast(
+          `❌ Échec synchro agenda : ${err.message || 'Erreur serveur'}`,
+          'Paramètres',
+          () => this.openSettingsTab('calendar')
+        );
+      }
+    },
+
+    // --- Notifications Toast (Bas à droite) ---
+    showToast(message, actionLabel = null, onAction = null, duration = 6000) {
+      const id = Date.now();
+      this.toast = { id, message, actionLabel, onAction };
+      if (duration > 0) {
+        setTimeout(() => {
+          if (this.toast && this.toast.id === id) {
+            this.toast = null;
+          }
+        }, duration);
+      }
+    },
+
+    closeToast() {
+      this.toast = null;
+    },
+
+    openSettingsTab(tab = 'layout') {
+      this.settingsTab = tab;
+      this.activeModal = 'settings';
+      this.toast = null;
     },
 
     // Modal navigation

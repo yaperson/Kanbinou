@@ -118,6 +118,7 @@ class ApiService {
       const errorData = await response.json().catch(() => ({}));
       const error = new Error(errorData.error || `Erreur serveur (${response.status})`);
       error.status = response.status;
+      error.debug = errorData.debug || null;
       throw error;
     }
 
@@ -223,6 +224,15 @@ class ApiService {
 
   async saveConfig(config) {
     return this.request('/config', { method: 'POST', body: config });
+  }
+
+  // --- Agenda CalDAV ---
+  async testCalendarConnection(payload) {
+    return this.request('/calendar/test', { method: 'POST', body: payload });
+  }
+
+  async pushCalendarEvents(payload) {
+    return this.request('/calendar/push', { method: 'POST', body: payload });
   }
 
   // --- Temps Réel : Server-Sent Events (SSE) ---

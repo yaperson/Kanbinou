@@ -853,6 +853,485 @@ if ($pathInfo === '/config') {
 
 
 
+// --- CONNEXION & SYNCHRONISATION AGENDA (CALDAV & SSL EXCHANGE) ---
+function normalizeExchangeEwsUrl(string $rawUrl): string {
+    if (!preg_match('/^https?:\/\//i', $rawUrl)) {
+        $rawUrl = 'https://' . $rawUrl;
+    }
+    if (stripos($rawUrl, '.asmx') !== false) {
+        return $rawUrl;
+    }
+    $parsed = parse_url($rawUrl);
+    $scheme = $parsed['scheme'] ?? 'https';
+    $host = $parsed['host'] ?? '';
+    $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+    return $scheme . '://' . $host . $port . '/EWS/Exchange.asmx';
+}
+
+function buildCandidateEwsUrls(string $rawUrl): array {
+    $primary = normalizeExchangeEwsUrl($rawUrl);
+    $candidates = [$primary];
+
+    if (stripos($primary, 'ovh.') !== false) {
+        $ovhClusters = [
+            'ex.mail.ovh.net',
+            'ex2.mail.ovh.net',
+            'ex3.mail.ovh.net',
+            'ex4.mail.ovh.net',
+            'ex5.mail.ovh.net',
+            'mail.ovh.net',
+            'pro1.mail.ovh.net',
+            'pro2.mail.ovh.net',
+            'pro3.mail.ovh.net'
+        ];
+        foreach ($ovhClusters as $host) {
+            $url = 'https://' . $host . '/EWS/Exchange.asmx';
+            if (!in_array($url, $candidates, true)) {
+                $candidates[] = $url;
+            }
+        }
+    }
+    return $candidates;
+}
+
+if ($pathInfo === '/calendar/test' && $method === 'POST') {
+    $body = getJsonBody();
+    $protocol = strtolower(trim($body['protocol'] ?? 'caldav'));
+    $rawUrl = trim($body['url'] ?? '');
+    $username = trim($body['username'] ?? '');
+    $password = $body['password'] ?? '';
+
+    if ($rawUrl === '' || $username === '' || $password === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Veuillez renseigner l\'adresse du serveur, l\'identifiant et le mot de passe.']);
+        exit;
+    }
+
+    // Détection automatique Exchange si l'URL contient mail.ovh.net, /owa ou .asmx
+    if ($protocol === 'ssl' || stripos($rawUrl, 'Exchange.asmx') !== false || stripos($rawUrl, '/owa') !== false || stripos($rawUrl, 'mail.ovh.') !== false) {
+        $candidateUrls = buildCandidateEwsUrls($rawUrl);
+        $soapGetFolder = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+            . 'xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" '
+            . 'xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" '
+            . 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            . '<soap:Header><t:RequestServerVersion Version="Exchange2010_SP2" /></soap:Header>'
+            . '<soap:Body><m:GetFolder>'
+            . '<m:FolderShape><t:BaseShape>Default</t:BaseShape></m:FolderShape>'
+            . '<m:FolderIds><t:DistinguishedFolderId Id="calendar" /></m:FolderIds>'
+            . '</m:GetFolder></soap:Body></soap:Envelope>';
+
+        $debugAttempts = [];
+
+        foreach ($candidateUrls as $candidateUrl) {
+            $wwwAuthHeaders = [];
+            $ch = curl_init($candidateUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_USERPWD => $username . ':' . $password,
+                CURLOPT_HTTPAUTH => CURLAUTH_ANY,
+                CURLOPT_UNRESTRICTED_AUTH => true,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: text/xml; charset=utf-8',
+                    'User-Agent: Kanbinou-ExchangeSSL/2.0',
+                    'Expect:'
+                ],
+                CURLOPT_POSTFIELDS => $soapGetFolder,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_HEADERFUNCTION => function($curl, $headerLine) use (&$wwwAuthHeaders) {
+                    if (stripos($headerLine, 'WWW-Authenticate:') === 0) {
+                        $wwwAuthHeaders[] = trim(substr($headerLine, 17));
+                    }
+                    return strlen($headerLine);
+                }
+            ]);
+
+            $responseXml = curl_exec($ch);
+            $curlErr = curl_error($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $effectiveUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: $candidateUrl;
+            curl_close($ch);
+
+            $hostLabel = parse_url($candidateUrl, PHP_URL_HOST) ?: $candidateUrl;
+            $soapErrText = '';
+            if (is_string($responseXml) && preg_match('/<(?:\w+:)?MessageText[^>]*>(.*?)<\/(?:\w+:)?MessageText>/is', $responseXml, $mErr)) {
+                $soapErrText = trim($mErr[1]);
+            }
+
+            $debugAttempts[] = [
+                'server' => $hostLabel,
+                'url' => $candidateUrl,
+                'effectiveUrl' => $effectiveUrl,
+                'httpStatus' => $httpCode,
+                'wwwAuthenticate' => count($wwwAuthHeaders) > 0 ? implode(', ', array_unique($wwwAuthHeaders)) : 'none',
+                'soapError' => $soapErrText !== '' ? $soapErrText : null,
+                'networkError' => $curlErr !== '' ? $curlErr : null
+            ];
+
+            if ($responseXml !== false && $httpCode >= 200 && $httpCode < 300 && stripos($responseXml, 'ResponseClass="Error"') === false) {
+                $winningUrl = $effectiveUrl ?: $candidateUrl;
+                $calendars = [];
+                $seenIds = [];
+
+                $addCalFolder = function(string $id, string $displayName) use (&$calendars, &$seenIds, $hostLabel, $winningUrl) {
+                    if ($id === '' || isset($seenIds[$id])) return;
+                    $seenIds[$id] = true;
+                    $calendars[] = [
+                        'id' => $id,
+                        'name' => $displayName . ' (' . $hostLabel . ')',
+                        'url' => $winningUrl
+                    ];
+                };
+
+                $mainId = 'calendar';
+                if (preg_match('/<(?:\w+:)?FolderId[^>]*\bId="([^"]+)"/i', $responseXml, $mId)) {
+                    $mainId = $mId[1];
+                }
+                $mainName = 'Calendrier principal';
+                if (preg_match('/<(?:\w+:)?DisplayName[^>]*>(.*?)<\/(?:\w+:)?DisplayName>/is', $responseXml, $dnMatch)) {
+                    $cand = trim(html_entity_decode(strip_tags($dnMatch[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                    if ($cand !== '') $mainName = $cand;
+                }
+                $addCalFolder($mainId, $mainName);
+
+                // Recherche de tous les autres calendriers du compte via FindFolder Deep
+                $soapFindCalendars = '<?xml version="1.0" encoding="utf-8"?>'
+                    . '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+                    . 'xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" '
+                    . 'xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" '
+                    . 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+                    . '<soap:Header><t:RequestServerVersion Version="Exchange2010_SP2" /></soap:Header>'
+                    . '<soap:Body><m:FindFolder Traversal="Deep">'
+                    . '<m:FolderShape><t:BaseShape>Default</t:BaseShape></m:FolderShape>'
+                    . '<m:ParentFolderIds><t:DistinguishedFolderId Id="msgfolderroot" /></m:ParentFolderIds>'
+                    . '</m:FindFolder></soap:Body></soap:Envelope>';
+
+                $chFind = curl_init($winningUrl);
+                curl_setopt_array($chFind, [
+                    CURLOPT_POST => true,
+                    CURLOPT_USERPWD => $username . ':' . $password,
+                    CURLOPT_HTTPAUTH => CURLAUTH_ANY,
+                    CURLOPT_UNRESTRICTED_AUTH => true,
+                    CURLOPT_HTTPHEADER => [
+                        'Content-Type: text/xml; charset=utf-8',
+                        'User-Agent: Kanbinou-ExchangeSSL/2.0',
+                        'Expect:'
+                    ],
+                    CURLOPT_POSTFIELDS => $soapFindCalendars,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_TIMEOUT => 8,
+                    CURLOPT_SSL_VERIFYPEER => true
+                ]);
+                $findXml = curl_exec($chFind);
+                $findCode = (int)curl_getinfo($chFind, CURLINFO_HTTP_CODE);
+                curl_close($chFind);
+
+                if (is_string($findXml) && $findCode >= 200 && $findCode < 300) {
+                    if (preg_match_all('/<(?:\w+:)?CalendarFolder\b[^>]*>(.*?)<\/(?:\w+:)?CalendarFolder>/is', $findXml, $cfMatches)) {
+                        foreach ($cfMatches[1] as $cfBlock) {
+                            if (
+                                preg_match('/<(?:\w+:)?FolderId[^>]*\bId="([^"]+)"/i', $cfBlock, $idM) &&
+                                preg_match('/<(?:\w+:)?DisplayName[^>]*>(.*?)<\/(?:\w+:)?DisplayName>/is', $cfBlock, $dnM)
+                            ) {
+                                $dName = trim(html_entity_decode(strip_tags($dnM[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                                if ($dName !== '') {
+                                    $addCalFolder($idM[1], $dName);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $firstCal = $calendars[0] ?? ['id' => 'calendar', 'name' => 'Calendrier (' . $hostLabel . ')', 'url' => $winningUrl];
+
+                echo json_encode([
+                    'success' => true,
+                    'protocol' => 'ssl',
+                    'calendarName' => $firstCal['name'],
+                    'calendarUrl' => $winningUrl,
+                    'folderId' => $firstCal['id'],
+                    'calendars' => $calendars,
+                    'debug' => $debugAttempts
+                ]);
+                exit;
+            }
+        }
+
+        $testedList = implode(', ', array_map(function($d) {
+            return $d['server'] . ' (HTTP ' . $d['httpStatus'] . ')';
+        }, $debugAttempts));
+
+        http_response_code(401);
+        echo json_encode([
+            'error' => 'Connexion Exchange refusée après test de : ' . $testedList . '. Vérifiez que cette boîte est bien une boîte Exchange (et non un mail standard MX Plan / Zimbra) et que le mot de passe est exact.',
+            'debug' => $debugAttempts
+        ]);
+        exit;
+    }
+
+    // Mode CalDAV standard
+    if (!preg_match('/^https?:\/\//i', $rawUrl)) {
+        $rawUrl = 'https://' . $rawUrl;
+    }
+    $calUrl = rtrim($rawUrl, '/') . '/';
+
+    $propfindXml = '<?xml version="1.0" encoding="utf-8" ?>'
+        . '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+        . '<d:prop><d:displayname/><d:resourcetype/></d:prop>'
+        . '</d:propfind>';
+
+    $ch = curl_init($calUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_CUSTOMREQUEST => 'PROPFIND',
+        CURLOPT_USERPWD => $username . ':' . $password,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC | CURLAUTH_DIGEST,
+        CURLOPT_HTTPHEADER => [
+            'Depth: 1',
+            'Content-Type: application/xml; charset=utf-8',
+            'User-Agent: Kanbinou-CalDAV/2.0'
+        ],
+        CURLOPT_POSTFIELDS => $propfindXml,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_TIMEOUT => 12,
+        CURLOPT_SSL_VERIFYPEER => true
+    ]);
+
+    $responseXml = curl_exec($ch);
+    $curlErr = curl_error($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $effectiveUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: $calUrl;
+    curl_close($ch);
+
+    if ($responseXml === false || $httpCode === 0) {
+        http_response_code(502);
+        echo json_encode(['error' => 'Serveur d\'agenda injoignable (' . ($curlErr ?: 'erreur réseau') . '). Vérifiez l\'URL CalDAV.']);
+        exit;
+    }
+
+    if ($httpCode === 401 || $httpCode === 403) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Identifiant ou mot de passe refusé par le serveur d\'agenda (Code ' . $httpCode . ').']);
+        exit;
+    }
+
+    if ($httpCode < 200 || $httpCode >= 300) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Le serveur n\'a pas reconnu cet emplacement CalDAV (Code HTTP ' . $httpCode . ').']);
+        exit;
+    }
+
+    $calendars = [];
+    $seenUrls = [];
+
+    if (preg_match_all('/<(?:\w+:)?response\b[^>]*>(.*?)<\/(?:\w+:)?response>/is', $responseXml, $matches)) {
+        foreach ($matches[1] as $respBlock) {
+            $isCalendar = preg_match('/<(?:\w+:)?calendar\b/i', $respBlock);
+            $isInboxOutbox = preg_match('/<(?:\w+:)?schedule-inbox\b|<(?:\w+:)?schedule-outbox\b/i', $respBlock);
+            if ($isCalendar && !$isInboxOutbox) {
+                $cName = '';
+                $cUrl = rtrim($effectiveUrl, '/') . '/';
+                if (preg_match('/<(?:\w+:)?displayname[^>]*>(.*?)<\/(?:\w+:)?displayname>/is', $respBlock, $dnMatch)) {
+                    $cName = trim(html_entity_decode(strip_tags($dnMatch[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                }
+                if (preg_match('/<(?:\w+:)?href[^>]*>(.*?)<\/(?:\w+:)?href>/is', $respBlock, $hrefMatch)) {
+                    $href = trim($hrefMatch[1]);
+                    if ($href !== '') {
+                        if (preg_match('/^https?:\/\//i', $href)) {
+                            $cUrl = rtrim($href, '/') . '/';
+                        } else {
+                            $parsed = parse_url($effectiveUrl);
+                            $origin = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? '') . (isset($parsed['port']) ? ':' . $parsed['port'] : '');
+                            $cUrl = rtrim($origin . '/' . ltrim($href, '/'), '/') . '/';
+                        }
+                    }
+                }
+                if ($cName !== '' && !isset($seenUrls[$cUrl])) {
+                    $seenUrls[$cUrl] = true;
+                    $calendars[] = ['id' => $cUrl, 'name' => $cName, 'url' => $cUrl];
+                }
+            }
+        }
+    }
+
+    if (count($calendars) === 0) {
+        $fallbackName = '';
+        if (preg_match('/<(?:\w+:)?displayname[^>]*>(.*?)<\/(?:\w+:)?displayname>/is', $responseXml, $dnMatch)) {
+            $fallbackName = trim(html_entity_decode(strip_tags($dnMatch[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
+        }
+        $resolvedUrl = rtrim($effectiveUrl, '/') . '/';
+        if ($fallbackName === '') {
+            $parsedHost = parse_url($resolvedUrl, PHP_URL_HOST) ?: 'Agenda CalDAV';
+            $fallbackName = $parsedHost . ' (' . $username . ')';
+        }
+        $calendars[] = ['id' => $resolvedUrl, 'name' => $fallbackName, 'url' => $resolvedUrl];
+    }
+
+    $firstCal = $calendars[0];
+
+    echo json_encode([
+        'success' => true,
+        'protocol' => 'caldav',
+        'calendarName' => $firstCal['name'],
+        'calendarUrl' => $firstCal['url'],
+        'folderId' => $firstCal['id'],
+        'calendars' => $calendars
+    ]);
+    exit;
+}
+
+if ($pathInfo === '/calendar/push' && $method === 'POST') {
+    $body = getJsonBody();
+    $protocol = strtolower(trim($body['protocol'] ?? 'caldav'));
+    $rawUrl = trim($body['url'] ?? '');
+    $username = trim($body['username'] ?? '');
+    $password = $body['password'] ?? '';
+    $folderId = trim($body['folderId'] ?? 'calendar');
+    $events = $body['events'] ?? [];
+
+    if ($rawUrl === '' || $username === '' || $password === '' || !is_array($events) || count($events) === 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Paramètres d\'agenda ou événements manquants.']);
+        exit;
+    }
+
+    if ($protocol === 'ssl' || stripos($rawUrl, 'Exchange.asmx') !== false || stripos($rawUrl, 'mail.ovh.') !== false) {
+        $ewsUrl = normalizeExchangeEwsUrl($rawUrl);
+        $savedFolderXml = '<t:DistinguishedFolderId Id="calendar" />';
+        if (strpos($folderId, 'shared:') === 0) {
+            $sharedEmail = trim(substr($folderId, 7));
+            if ($sharedEmail !== '') {
+                $safeEmail = htmlspecialchars($sharedEmail, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+                $savedFolderXml = '<t:DistinguishedFolderId Id="calendar"><t:Mailbox><t:EmailAddress>' . $safeEmail . '</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId>';
+            }
+        } elseif ($folderId !== '' && $folderId !== 'calendar') {
+            $safeFolderId = htmlspecialchars($folderId, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            $savedFolderXml = '<t:FolderId Id="' . $safeFolderId . '" />';
+        }
+
+        $pushed = 0;
+
+        foreach ($events as $ev) {
+            $summary = htmlspecialchars($ev['summary'] ?? 'Rappel Kanbinou', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            $description = htmlspecialchars($ev['description'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            $location = htmlspecialchars($ev['location'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            $startIso = htmlspecialchars($ev['startIso'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            $endIso = htmlspecialchars($ev['endIso'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+
+            if ($startIso === '' || $endIso === '') continue;
+
+            $soapCreateItem = '<?xml version="1.0" encoding="utf-8"?>'
+                . '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+                . 'xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" '
+                . 'xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" '
+                . 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+                . '<soap:Header><t:RequestServerVersion Version="Exchange2010_SP2" /></soap:Header>'
+                . '<soap:Body>'
+                . '<m:CreateItem SendMeetingInvitations="SendToNone">'
+                . '<m:SavedItemFolderId>' . $savedFolderXml . '</m:SavedItemFolderId>'
+                . '<m:Items>'
+                . '<t:CalendarItem>'
+                . '<t:Subject>' . $summary . '</t:Subject>'
+                . '<t:Body BodyType="Text">' . $description . '</t:Body>'
+                . '<t:ReminderIsSet>true</t:ReminderIsSet>'
+                . '<t:ReminderMinutesBeforeStart>15</t:ReminderMinutesBeforeStart>'
+                . '<t:Start>' . $startIso . '</t:Start>'
+                . '<t:End>' . $endIso . '</t:End>'
+                . '<t:IsAllDayEvent>false</t:IsAllDayEvent>'
+                . '<t:LegacyFreeBusyStatus>Busy</t:LegacyFreeBusyStatus>'
+                . '<t:Location>' . $location . '</t:Location>'
+                . '</t:CalendarItem>'
+                . '</m:Items>'
+                . '</m:CreateItem>'
+                . '</soap:Body></soap:Envelope>';
+
+            $ch = curl_init($ewsUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_USERPWD => $username . ':' . $password,
+                CURLOPT_HTTPAUTH => CURLAUTH_ANY,
+                CURLOPT_UNRESTRICTED_AUTH => true,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: text/xml; charset=utf-8',
+                    'User-Agent: Kanbinou-ExchangeSSL/2.0',
+                    'Expect:'
+                ],
+                CURLOPT_POSTFIELDS => $soapCreateItem,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_TIMEOUT => 12,
+                CURLOPT_SSL_VERIFYPEER => true
+            ]);
+
+            $resp = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErr = curl_error($ch);
+            curl_close($ch);
+
+            if ($resp === false || $httpCode < 200 || $httpCode >= 300 || stripos($resp, 'ResponseClass="Error"') !== false) {
+                http_response_code(502);
+                echo json_encode([
+                    'error' => 'Échec d\'écriture sur le calendrier Exchange SSL (Code HTTP ' . $httpCode . ($curlErr ? ' - ' . $curlErr : '') . ').'
+                ]);
+                exit;
+            }
+            $pushed++;
+        }
+
+        echo json_encode(['success' => true, 'pushedCount' => $pushed]);
+        exit;
+    }
+
+    // Mode CalDAV standard
+    $calUrl = rtrim($rawUrl, '/') . '/';
+    $pushed = 0;
+    foreach ($events as $ev) {
+        $uid = preg_replace('/[^a-zA-Z0-9_-]/', '', $ev['uid'] ?? '');
+        $ics = $ev['icsContent'] ?? '';
+        if ($uid === '' || $ics === '') continue;
+
+        $targetUrl = $calUrl . $uid . '.ics';
+        $ch = curl_init($targetUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_CUSTOMREQUEST => 'PUT',
+            CURLOPT_USERPWD => $username . ':' . $password,
+            CURLOPT_HTTPAUTH => CURLAUTH_BASIC | CURLAUTH_DIGEST,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: text/calendar; charset=utf-8',
+                'User-Agent: Kanbinou-CalDAV/2.0'
+            ],
+            CURLOPT_POSTFIELDS => $ics,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 12,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
+
+        $resp = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($resp === false || $httpCode < 200 || $httpCode >= 300) {
+            http_response_code(502);
+            echo json_encode([
+                'error' => 'Échec d\'écriture sur l\'agenda (Code HTTP ' . $httpCode . ($curlErr ? ' - ' . $curlErr : '') . ').'
+            ]);
+            exit;
+        }
+        $pushed++;
+    }
+
+    echo json_encode(['success' => true, 'pushedCount' => $pushed]);
+    exit;
+}
+
 // --- TEMPS RÉEL (SSE) ---
 if ($pathInfo === '/events') {
     // Sur mutualisé PHP (sans serveur d'événements persistant Node/Redis),
@@ -864,3 +1343,4 @@ if ($pathInfo === '/events') {
 // Si la route n'est pas reconnue
 http_response_code(404);
 echo json_encode(['error' => 'Route API introuvable : ' . htmlspecialchars($pathInfo)]);
+
